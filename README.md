@@ -2,7 +2,7 @@
 
 A single, standalone GenLayer Intelligent Contract for universal digital-delivery agreement and adjudication. One canonical contract (`contracts/speclock.py`), two fully-implemented evaluation profiles, no marketplace frontend/database/off-chain adjudicator.
 
-**Status: deployed to GenLayer Studio Network, lifecycle exercise in progress.** See `SUBMISSION.md` for the honest verdict and `docs/FEATURE_MATRIX.md` for per-capability status. 40/40 Direct Mode tests pass; `genvm-lint check`/`validate` are clean. Live at `0xDa62645C8d904e1cE11BEc4F359cA20971092536` (chain id `61999`) with a real, `FINALIZED` `create_agreement` transaction under 5-validator consensus — see `docs/DEPLOYMENT.md` for the evidence and `docs/RUNBOOK_REMAINING_STEPS.md` for what's left.
+**Status: deployed to GenLayer Studio Network, lifecycle exercise in progress.** See `SUBMISSION.md` for the honest verdict and `docs/FEATURE_MATRIX.md` for per-capability status. 42/42 Direct Mode tests pass; `genvm-lint check`/`validate` are clean. Live at `0x713036220DE89a077fea1C3203C2510adB67f992` (chain id `61999`) with three real, `FINALIZED` `create_agreement` transactions under 5-validator consensus — see `docs/DEPLOYMENT.md` for the evidence and `docs/RUNBOOK_REMAINING_STEPS.md` for what's left.
 
 ## Quickstart
 
