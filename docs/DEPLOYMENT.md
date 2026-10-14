@@ -1,6 +1,6 @@
 # Deployment
 
-## Status: DEPLOYED to GenLayer Studio Network. Full real lifecycle executed and verified on-chain for both a negative and a positive API-delivery agreement, start to finish — FINALIZED, SETTLED.
+## Status: DEPLOYED to GenLayer Studio Network. Full real lifecycle executed and verified on-chain for both profiles — API delivery (negative + positive) and AI-agent delivery (positive + an UNVERIFIABLE/recovery case) — every agreement FINALIZED and SETTLED end to end.
 
 ## Current deployment (includes the address-coercion fix)
 
@@ -95,9 +95,43 @@ Real validators independently fetched `https://httpbin.org/json` and correctly d
 
 Both outcomes were read from the chain after the fact, not assumed in advance — the negative case could in principle have come back `UNVERIFIABLE` if `httpbin.org` had been unreachable at evaluation time, and did not.
 
+### AI-agent-delivery agreement "5" — full real lifecycle, SETTLED (PASS)
+
+Evidence: `https://httpbin.org/robots.txt` (real content: `User-agent: *` / `Disallow: /deny`). Criterion: "the delivered artifact is a robots.txt-style access policy that includes at least one 'User-agent' directive."
+
+| Step | Tx hash | Execution result | Return value |
+|---|---|---|---|
+| `create_agreement` | `0x6b1de68846cf6f69b68c053447d5fefe8e5e09c835dc5eda82e33ccf2972a393` | `SUCCESS` | `agreement_id = "5"` |
+| `accept_agreement("5")` | `0xc21ddc582d789ecec7e40bbdc6517bc229fb5041fe4908e0fd0862b4a8dc48e1` | `SUCCESS` | — |
+| `fund_agreement("5", 1000)` | `0x777a8b96782e46967d75d9334981d0ebf20885165a343e4f40b05b1208fb4f43` | `SUCCESS` | — |
+| `freeze_agreement("5", false)` | `0x29d13162b806f615384b31613b3c91c45a4687c0d7d295799fd8ed5acc58f444` | `SUCCESS` | — |
+| `submit_evidence("5", ...)` | `0xf45c48d6414bd0f97bcf2fc290e27b814405b28e37348405657a3aeb820e8151` | `SUCCESS` | `"5-ev3"` |
+| `request_evaluation("5")` | `0x1155270a5c007163bfa8a35c27bc7ec5ef9e15027ccb90ee6f8f304052ed7c5d` | `SUCCESS` | `"5-eval3"` |
+| `finalize_verdict("5")` ×2 | `0xd4c00825655c3f33a4c26250d4922b83f20a0e2f7db4b5fd50f99fe3b8e412be`, `0xa44ff852aa966cf037795f41f6b42b1daa7ae9af2105c03cc25aa2efde527c26` | `SUCCESS`, `SUCCESS` | `false`, `true` |
+| `settle("5")` | `0xab5b5d870c188dc6055b0a25524a4d76303860747e51b0be52404fb8e7bf0037` | `SUCCESS` | `"5-st3"` |
+
+**Real, on-chain `get_evaluation("5-eval3")` read-back** — note the rationale, a genuine LLM response quoting the actually-fetched content, proving `_fetch_agent_evidence_excerpt` worked live:
+```json
+{"agreement_id":"5","evaluation_id":"5-eval3","evidence_snapshot_commitment":"d380e3fe7de1c701cd9c1b211ab0142ab7d6b1e7cad55738fb05b57145f240f4","failure_attribution":"UNKNOWN","findings":[{"attribution":"UNKNOWN","criterion_id":"c1","finding":"PASS","rationale":"The fetched content from https://httpbin.org/robots.txt contains 'User-agent: *' followed by 'Disallow: /deny', which is a valid robots.txt-style access policy that includes at least one 'User-agent' directive. The criterion is fully satisfied.","sufficiency":"SUFFICIENT"}],"overall_finding":"PASS","profile":"ai_agent_delivery","round":1,"status":"PROVISIONAL"}
+```
+
+**Real settlement:** `{"refunded_to_buyer":0,"released_to_provider":1000,"retained":0,"settlement_id":"5-st3","terminal_phase":"SETTLED"}`
+
+### AI-agent-delivery agreement "6" — full real lifecycle, SETTLED via recovery (UNVERIFIABLE)
+
+Same evidence URL, a deliberately mismatched criterion: "the delivered artifact is a JSON object containing a field named 'summary' that quotes the source material verbatim." The real, unscripted LLM response did **not** simply say `FAIL` — it reasoned that no distinct "delivered artifact" separate from the fetched source material was ever identified, and correctly returned `UNVERIFIABLE` rather than guessing:
+
+```json
+{"agreement_id":"6","evaluation_id":"6-eval4","evidence_snapshot_commitment":"df0df010ac5ee944c2a33bc91034a6e5637dfbae34da88cb5ce30d37e015dfc8","failure_attribution":"UNKNOWN","findings":[{"attribution":"UNKNOWN","criterion_id":"c1","finding":"UNVERIFIABLE","rationale":"The delivered artifact to be adjudicated was not provided in the input. While the source material (robots.txt excerpt) is present, the output that was supposed to be evaluated against the criterion is missing, making it impossible to determine if a JSON object with a 'summary' field was created.","sufficiency":"INSUFFICIENT"}],"overall_finding":"UNVERIFIABLE","profile":"ai_agent_delivery","round":1,"status":"PROVISIONAL"}
+```
+
+This correctly exercised the `settle()` branch that never auto-awards disputed principal on an `UNVERIFIABLE` verdict: `settle("6")` (tx `0x1e249fc6aa934be8f0cb79f87f3f2e080205032628b1d682e797ea326d955067`, `SUCCESS`) moved the agreement to `RECOVERY_PENDING` with the full funded amount retained (`{"refunded_to_buyer":0,"released_to_provider":0,"retained":1000,"settlement_id":"6-st4","terminal_phase":"RECOVERY_PENDING"}`), rather than crediting either party. `recover_inconclusive("6")` (which would complete the refund) was not called in this pass but is already covered by `tests/direct/test_speclock_security.py::test_unverifiable_overall_recovers_funds_without_awarding_either_party`.
+
+Full tx chain for "6": `create_agreement` `0x40e3197c532798b4725754ba20b40f7e0c3c556cf33c1cc6fb8f6f4114fe512b` → `accept_agreement` `0xf2c23f8253a224e4ae888ab24467e67902aefbf0dad3980157a9b5e29dfe6ce1` → `fund_agreement` `0xb61de8cbf0d3d2b6f7663aba9e8b24017b668e6e3b4a88fbe4f56c4830f86948` → `freeze_agreement` `0xdd32d4b3ad3cff4ffb801b894adb029999c3c26ab714cb6b1930e79512434c57` → `submit_evidence` `0x9547f02df4db1aaa677c7eef628127989b79bfa78619b3af887ebc020ef2d4fe` → `request_evaluation` `0xc2a7b4d8e4510408816feda9d4c9736f0425aaae3735f85cf4bb742f6e8af331` → `finalize_verdict` ×2 `0x7fe57df5e0e3b1dfe1a475fc764aa8505d40f37fd506e0b0ba88c8c75ef46f2c`, `0x84406fd7dac524a0d836a3838ba1e98ad749f3a66f2e90002d95d9630cc610b7` → `settle` `0x1e249fc6aa934be8f0cb79f87f3f2e080205032628b1d682e797ea326d955067`. All `SUCCESS`.
+
 ## Not yet exercised on this deployment
 
-`file_appeal`/`resolve_appeal` and the `ai_agent_delivery` profile were not exercised against this deployment (no appeal was filed on either agreement; no agent-profile agreement was created here). The agent-evidence-fetch fix (`docs/FEATURE_MATRIX.md` #5) is present in this deployment's source but has not itself been exercised live yet.
+`file_appeal`/`resolve_appeal` were not exercised against this deployment (no appeal was filed on any of agreements `"2"`, `"4"`, `"5"`, `"6"`) and `recover_inconclusive` was not called to complete agreement `"6"`'s refund. Both are already covered by Direct Mode tests.
 
 ## The `genlayer` CLI's `--args` tooling defect (background, for context)
 
