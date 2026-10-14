@@ -569,7 +569,10 @@ class SpecLock(gl.Contract):
             agreement.phase = PHASE_CANCELLED
             self.agreements[agreement_id] = agreement
             return
-        self._require(agreement.phase == PHASE_FROZEN, f"agreement is not eligible for cancel/expire in phase {agreement.phase}")
+        self._require(
+            agreement.phase in (PHASE_FROZEN, PHASE_RESUBMISSION_REQUESTED),
+            f"agreement is not eligible for cancel/expire in phase {agreement.phase}",
+        )
         self._require(self._is_party(agreement, caller), "only a party may consent to wind-down")
         if caller == agreement.buyer:
             self._require(not agreement.buyer_consents_expire, "buyer has already consented to wind-down")
@@ -622,7 +625,7 @@ class SpecLock(gl.Contract):
         self.evidence[receipt_id] = receipt
         receipt_ids.append(receipt_id)
 
-        if agreement.phase == PHASE_FROZEN:
+        if agreement.phase in (PHASE_FROZEN, PHASE_RESUBMISSION_REQUESTED):
             agreement.phase = PHASE_SUBMITTED
             self.agreements[agreement_id] = agreement
         return receipt_id
@@ -763,7 +766,11 @@ class SpecLock(gl.Contract):
                     }
                 )
                 continue
-            finding, sufficiency, rationale, attribution = self._probe_api_criterion(c, probe_evidence[0])
+            # Most recently submitted evidence for this criterion wins -- this
+            # is what makes request_resubmission's corrective evidence actually
+            # take effect on re-evaluation, rather than always re-probing the
+            # first (possibly stale/wrong) evidence ever submitted.
+            finding, sufficiency, rationale, attribution = self._probe_api_criterion(c, probe_evidence[-1])
             findings.append(
                 {
                     "criterion_id": c["id"],

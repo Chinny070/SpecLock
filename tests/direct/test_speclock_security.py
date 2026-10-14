@@ -209,6 +209,93 @@ def test_resubmission_budget_enforced(direct_vm, direct_deploy, direct_alice, di
         contract.request_resubmission(agreement_id)
 
 
+def test_resubmission_full_cycle_reaches_a_new_evaluation(direct_vm, direct_deploy, direct_alice, direct_bob):
+    """Regression test for a real defect found during a security audit:
+    submit_evidence only advanced the phase FROZEN -> SUBMITTED, never
+    RESUBMISSION_REQUESTED -> SUBMITTED, so after request_resubmission() the
+    agreement (and its funded amount) was permanently stuck -- no further
+    submit_evidence call could ever unblock request_evaluation again, which
+    only accepts SUBMITTED/RE_EVALUATING. Fixed by also advancing the phase
+    from RESUBMISSION_REQUESTED."""
+    contract = direct_deploy(CONTRACT)
+    direct_vm.sender = direct_alice
+    agreement_id = contract.create_agreement(
+        direct_bob, "api_delivery", "spec",
+        [{"id": "c1", "description": "endpoint responds", "priority": "required", "evidence_method": "http:c1"}],
+        1,  # max_resubmissions = 1
+    )
+    direct_vm.sender = direct_bob
+    contract.accept_agreement(agreement_id)
+    direct_vm.sender = direct_alice
+    direct_vm.value = 100
+    contract.fund_agreement(agreement_id, 100)
+    direct_vm.value = 0
+    contract.freeze_agreement(agreement_id, False)
+
+    direct_vm.sender = direct_bob
+    digest = hashlib.sha256(b"x").hexdigest()
+    contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
+    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": "bad"})
+    contract.request_evaluation(agreement_id)
+
+    direct_vm.sender = direct_alice
+    contract.request_resubmission(agreement_id)
+    assert contract.get_agreement(agreement_id)["phase"] == "RESUBMISSION_REQUESTED"
+
+    direct_vm.sender = direct_bob
+    contract.submit_evidence(agreement_id, "https://api.example.com/health2", digest, json.dumps({"criterion_id": "c1"}))
+    assert contract.get_agreement(agreement_id)["phase"] == "SUBMITTED"
+
+    # Mocks match in first-registered order, and ".*health.*" would also
+    # match "health2" -- clear and re-register rather than relying on the
+    # new mock shadowing the old one (same pattern as elsewhere in this file).
+    direct_vm.clear_mocks()
+    direct_vm.mock_web(r".*api\.example\.com/health2.*", {"status": 200, "body": json.dumps({"ok": True})})
+    evaluation_id2 = contract.request_evaluation(agreement_id)
+    evaluation2 = contract.get_evaluation(evaluation_id2)
+    assert evaluation2["overall_finding"] == "PASS"
+
+
+def test_resubmission_requested_without_a_follow_up_can_still_be_wound_down(direct_vm, direct_deploy, direct_alice, direct_bob):
+    """Companion regression test: if request_resubmission is called but
+    neither party ever submits new evidence, the agreement must still be
+    recoverable via the same mutual-consent wind-down as a stalled FROZEN
+    agreement -- not a second, narrower fund-lock trap."""
+    contract = direct_deploy(CONTRACT)
+    direct_vm.sender = direct_alice
+    agreement_id = contract.create_agreement(
+        direct_bob, "api_delivery", "spec",
+        [{"id": "c1", "description": "endpoint responds", "priority": "required", "evidence_method": "http:c1"}],
+        1,
+    )
+    direct_vm.sender = direct_bob
+    contract.accept_agreement(agreement_id)
+    direct_vm.sender = direct_alice
+    direct_vm.value = 100
+    contract.fund_agreement(agreement_id, 100)
+    direct_vm.value = 0
+    contract.freeze_agreement(agreement_id, False)
+
+    direct_vm.sender = direct_bob
+    digest = hashlib.sha256(b"x").hexdigest()
+    contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
+    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": "bad"})
+    contract.request_evaluation(agreement_id)
+
+    direct_vm.sender = direct_alice
+    contract.request_resubmission(agreement_id)
+
+    contract.cancel_or_expire(agreement_id)
+    assert contract.get_agreement(agreement_id)["phase"] == "RESUBMISSION_REQUESTED"
+    direct_vm.sender = direct_bob
+    contract.cancel_or_expire(agreement_id)
+
+    agreement = contract.get_agreement(agreement_id)
+    assert agreement["phase"] == "EXPIRED"
+    settlement = contract.get_settlement(agreement_id)
+    assert settlement["refunded_to_buyer"] == 100
+
+
 def test_finalize_consent_cannot_be_forced_by_a_single_malicious_party(direct_vm, direct_deploy, direct_alice, direct_bob):
     """Core manipulation-resistance proof for the redesigned finalize gate:
     an interested single party (here, the buyer who wants to deny the

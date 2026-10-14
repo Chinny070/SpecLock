@@ -1,8 +1,8 @@
 # Deployment
 
-## Status: DEPLOYED to GenLayer Studio Network, including a fully live-verified real native-value escrow. The current deployment (`0xbE2a981...` below) has real payable funding, real appeal bonds, and real GEN withdrawals — not bookkeeping-only. A full on-chain lifecycle was executed covering both a `PASS` settlement with a real provider withdrawal and a `FAIL` settlement with a real appeal (filed with a real bond, correctly `REJECTED` on re-evaluation, bond correctly credited to the non-appellant party) and two further real withdrawals — every wallet balance delta matched the contract's own accounting exactly. Double-withdrawal and no-balance-withdrawal were both tested live and correctly rejected. See "Native-value escrow: live-verified" below for the full transaction-by-transaction record. A predecessor deployment (`0xD5602E88...`) remains live with the earlier bookkeeping-only design and its own independently-verified lifecycle evidence (API/agent delivery, `recover_inconclusive`) — see "Superseded deployments" for how the two relate.
+## Status: DEPLOYED to GenLayer Studio Network, with a full 38-capability audit, a real fund-lock bug found and fixed, and 30 of 38 capabilities now live-verified. The current deployment (`0x2671cd7...` below) fixes a genuine `request_resubmission` fund-lock defect found during this audit, on top of the real native-value escrow (payable funding, real appeal bonds, real GEN withdrawals). See "Native-value escrow: live-verified" and "Capability audit: the resubmission fund-lock fix, live-verified" below for the full transaction-by-transaction record. Two predecessor deployments (`0xbE2a981...`, `0xD5602E88...`) remain live with their own independently-verified lifecycle evidence — see "Superseded deployments" for how all three relate.
 
-## Current deployment (real native-value escrow — the live-verified design)
+## Current deployment (resubmission fix + real native-value escrow — the live-verified design)
 
 | Field | Value |
 |---|---|
@@ -11,14 +11,24 @@
 | RPC | `https://studio.genlayer.com/api` |
 | Explorer | `https://genlayer-explorer.vercel.app` |
 | Deployer address | `0xaffE15eEc45b68835cc9E5B4Ab85dD5deaE8e70b` (local alias `my-studionet-wallet` — used only to deploy and to fund disposable test accounts, never as a lifecycle party) |
-| **Contract address** | **`0xbE2a98135e41B4fE722919b87024D867F8De8343`** |
+| **Contract address** | **`0x2671cd7Fc9f7653f8e8A506E4aC3281A1Db0553c`** |
+| Deploy tx hash | `0x8a63968ce744bfb12ec3f93ca5e44e18153858dadda75c650fa75fc135dc338e` |
+| Deploy tx status | `FINALIZED`, `execution_result: "SUCCESS"` |
+| Deploy command | `genlayer deploy --contract contracts/speclock.py` (no `--args`) |
+
+Schema readback (`genlayer schema 0x2671cd7Fc9f7653f8e8A506E4aC3281A1Db0553c`) confirms 29 methods matching `contracts/speclock.py`.
+
+### Predecessor deployment (real native-value escrow, predates the resubmission fix)
+
+| Field | Value |
+|---|---|
+| **Contract address** | `0xbE2a98135e41B4fE722919b87024D867F8De8343` |
 | Deploy tx hash | `0x56c13ef85e7d92f449fc73369c543b6f053f6bca50ae7aecf911f5511e2a279e` |
-| Deploy tx status | `FINALIZED`, `execution_result: "SUCCESS"` (both checked explicitly this time — see the deploy-command correction below) |
-| Deploy command | `genlayer deploy --contract contracts/speclock.py` (no `--args` — the constructor takes zero arguments) |
+| Deploy tx status | `FINALIZED`, `execution_result: "SUCCESS"` |
 
-Schema readback (`genlayer schema 0xbE2a98135e41B4fE722919b87024D867F8De8343`) confirms 29 methods matching `contracts/speclock.py`, with `fund_agreement`/`file_appeal` both `payable: true` and `withdraw`/`get_claimable` present — the real-escrow design, fully live-verified below.
+Schema readback confirms 29 methods, `fund_agreement`/`file_appeal` both `payable: true`. This deployment's own lifecycle evidence (the first real `PASS`/`FAIL`+appeal escrow verification) remains valid and is recorded below under "Native-value escrow: live-verified"; it predates the `request_resubmission` fund-lock fix (it has the *same* latent bug the fix below addresses, so it must not be used for any resubmission flow).
 
-### Predecessor deployment (bookkeeping-only funding, still independently useful for its own lifecycle evidence)
+### Earlier predecessor deployment (bookkeeping-only funding, still independently useful for its own lifecycle evidence)
 
 | Field | Value |
 |---|---|
@@ -27,6 +37,17 @@ Schema readback (`genlayer schema 0xbE2a98135e41B4fE722919b87024D867F8De8343`) c
 | Deploy tx status | `FINALIZED`, unanimous 5-validator `MAJORITY_AGREE` |
 
 Schema readback confirms 27 methods (including `check_verdict_consistency`) matching the pre-escrow-fix source, with `fund_agreement`/`file_appeal` both `payable: false`. This deployment's own lifecycle evidence (API/agent delivery PASS/FAIL/UNVERIFIABLE, live `recover_inconclusive`, `check_verdict_consistency`) remains valid and is recorded further below; it just predates the real-escrow fix.
+
+## Capability audit: the resubmission fund-lock fix, live-verified
+
+A full capability-by-capability audit of all 38 numbered brief items (`docs/FEATURE_MATRIX.md`) found a real defect via a Direct Mode probe exercising the *full* `request_resubmission` cycle (create → evaluate `FAIL` → `request_resubmission` → submit corrected evidence → re-evaluate) — something no existing test did. `submit_evidence` never advanced the phase out of `RESUBMISSION_REQUESTED`, so `request_evaluation` (which only accepts `SUBMITTED`/`RE_EVALUATING`) could never be called again: a genuine, previously-untested fund-lock, compounded by `cancel_or_expire`'s wind-down also only accepting `FROZEN`. A related defect in `_evaluate_api_profile` meant that even after fixing the phase transition, a resubmission's whole point — corrected evidence — was silently ignored on re-evaluation, since it always re-probed the first (stale) evidence ever submitted for a criterion (`probe_evidence[0]`) rather than the latest. Both fixed (`submit_evidence` also transitions `RESUBMISSION_REQUESTED → SUBMITTED`; `cancel_or_expire` also accepts `RESUBMISSION_REQUESTED`; `_evaluate_api_profile` now uses `probe_evidence[-1]`), covered by two new Direct Mode regression tests, 54/54 tests pass, lint clean. Redeployed to `0x2671cd7Fc9f7653f8e8A506E4aC3281A1Db0553c` (`FINALIZED`, `execution_result: "SUCCESS"`).
+
+**Live-verified end to end**, under the same small-amount budget as before (max 0.001 GEN/tx, max 0.02 GEN cumulative; this batch spent 0.00031 GEN plus a small stranded amount noted below):
+
+- Agreement "2": created with the vague spec "Deliver a reasonable API" / "Response should be reasonable and fast" — real ambiguity report correctly flagged both vague terms (capability 17). `freeze_agreement(..., False)` correctly reverted (`"ambiguity report is non-empty; freeze requires explicit acknowledgement"`); `freeze_agreement(..., True)` correctly succeeded. `get_policy_fingerprint` read back a real fingerprint (capability 36). Evidence submitted (`https://httpbin.org/status/200`) evaluated real `FAIL` (`"HTTP 200 but response failed functional check"`). `request_resubmission` moved the agreement to `RESUBMISSION_REQUESTED`; corrected evidence (`https://httpbin.org/json`) was submitted, confirmed moving the phase to `SUBMITTED` (the fix, live); re-evaluation produced a genuine `PASS`. Mutual-consent `finalize_verdict` (`false` then `true`), `settle` (`released_to_provider:100000000000000`). `get_reputation(provider)` read back `{"finalized_outcomes":0,...}` before and `{"finalized_outcomes":1,"pass_outcomes":1}` after (capability 14/35). Both evidence receipts (`2-ev1`, `2-ev2`) read back via `get_evidence_receipt`, both confirmed `"status":"FROZEN"` (capability 27).
+- Agreement "3": a real two-required-criterion agreement (`c1`: reachable JSON endpoint; `c2`: reachable but non-JSON) correctly derived `overall_finding:"FAIL"` from the mixed per-criterion `PASS`/`FAIL` findings (capability 6), read back from `get_evaluation` on-chain. This agreement's lifecycle was not completed past evaluation: a transient Studio Network RPC error during receipt-polling (the same intermittent flakiness documented elsewhere in this project — `eth_getTransactionByHash`/`eth_getTransactionCount` returning HTML error pages instead of JSON) occurred after the evaluation transaction had already genuinely succeeded on-chain, and the disposable buyer/provider keys for this agreement exist only in the Node process that generated them, so they could not be reused to finish settlement in a fresh process. **A small amount of real testnet GEN (0.0001 GEN, the funded amount) is stranded** as a result — the same low-value, already-documented key-lifetime limitation (`createAccount()` never exposes a raw private key) that has stranded a handful of agreements on earlier deployments throughout this project, not a new class of risk.
+
+No contract defects beyond the two above were found during this audit's live testing.
 
 ## A real production defect found and fixed via this deployment (not caught by Direct Mode)
 
@@ -242,10 +263,11 @@ Three attempts to route around this *within the CLI itself* (reading a keychain-
 4. `0xaa54c150B128843e5638cF31e2F1B632117ccBE2` (deploy tx `0x62d7d3d603c9c861f2cfc56dc5c7ca1ee5b94de043dfeac4482c3f72f4ba1dc2`, `FINALIZED`). The first escrow-test deployment — real payable `fund_agreement`/`file_appeal`, payouts via `gl.get_contract_at(...)`, which failed. Contains agreement `"2"` with a real deposit (1 GEN) permanently stuck in an unresolved state per that finding. Do not use for anything other than historical reference to that finding.
 5. `0xd60dfaC9B3473Fce6bC97CD47F7a5Ac80c97A74e` (deploy tx `0x5f7f58da3467b1a4291b8161a4061bf37355729f36bd7f1d298d1c561d6446b9`, consensus `FINALIZED` but **`execution_result: "ERROR"`** — constructor call failed, see "Native-value escrow" above). First attempt to live-verify the `_EthAccount`-based escrow fix, deployed with a malformed `--args '[]'` CLI invocation. Do not use.
 6. `0x192CA2229677E4e1d0d115d4665E2634Bf0A25d1` (deploy tx `0x14a6ade55f9a8d4a9577a4346b1316100ac457e45699b3fcbe85d007177a5a8d`, same `FINALIZED`-but-`ERROR` outcome, same cause). Second attempt, identical mistake. Do not use.
-7. `0xD5602E88b021573cbb364Efaae8DCD48DF555ff7` (deploy tx `0xdd2f6307a732a43df1ebf1c7bc2683eeb9f8472b4985b3a0cd610c69fc645cb4`, `FINALIZED`, `SUCCESS`). The bookkeeping-only predecessor, now superseded by `0xbE2a98135e41B4fE722919b87024D867F8De8343` as the current deployment. Its own lifecycle evidence (API/agent delivery, `recover_inconclusive`, `check_verdict_consistency`) remains valid and is recorded above under "How real on-chain lifecycle execution was achieved" and "`recover_inconclusive` — live, verified" — kept live for historical reference, not for further testing.
+7. `0xD5602E88b021573cbb364Efaae8DCD48DF555ff7` (deploy tx `0xdd2f6307a732a43df1ebf1c7bc2683eeb9f8472b4985b3a0cd610c69fc645cb4`, `FINALIZED`, `SUCCESS`). The bookkeeping-only predecessor. Its own lifecycle evidence (API/agent delivery, `recover_inconclusive`, `check_verdict_consistency`) remains valid and is recorded above under "How real on-chain lifecycle execution was achieved" and "`recover_inconclusive` — live, verified" — kept live for historical reference, not for further testing.
+8. `0xbE2a98135e41B4fE722919b87024D867F8De8343` (deploy tx `0x56c13ef85e7d92f449fc73369c543b6f053f6bca50ae7aecf911f5511e2a279e`, `FINALIZED`, `SUCCESS`). The first real-escrow deployment — real deposits, a real `PASS` settlement, a real withdrawal, a real appealed `FAIL` settlement, all live-verified (see "Native-value escrow: live-verified" above). Superseded by `0x2671cd7Fc9f7653f8e8A506E4aC3281A1Db0553c` once the `request_resubmission` fund-lock defect was found; **do not call `request_resubmission` against this deployment** — it has the same unfixed bug. Its escrow lifecycle evidence remains valid and is not affected by that defect.
 
 All remain live on-chain (nothing can be un-deployed).
 
 ## Source/commit record
 
-The current deployment `0xbE2a98135e41B4fE722919b87024D867F8De8343` includes everything: the mutual-consent clock redesign, the appeal-resolution precision fix, the aggregate-attribution fix, the agent-evidence-fetch fix, the `_as_address` hex-string fix, `check_verdict_consistency`, and the real native-value escrow fix (`_EthAccount`/`withdraw`) — all live-verified on this deployment except the four-agreement API/agent lifecycle walkthrough and the live `recover_inconclusive` demonstration, which were run against the predecessor `0xD5602E88...` deployment (identical application logic for everything except the escrow wrapping) rather than re-run here, since that would be a repeat of evidence already gathered. If the contract source changes again, this document and any specific deployment must be treated as stale together, per the brief's "any source fix invalidates prior deployment-source evidence" rule — the per-section status notes above are the authoritative statement of what each deployed address does and does not include.
+The current deployment `0x2671cd7Fc9f7653f8e8A506E4aC3281A1Db0553c` includes everything: the mutual-consent clock redesign, the appeal-resolution precision fix, the aggregate-attribution fix, the agent-evidence-fetch fix, the `_as_address` hex-string fix, `check_verdict_consistency`, the real native-value escrow fix (`_EthAccount`/`withdraw`), and the `request_resubmission` fund-lock fix (phase transition + latest-evidence selection) — all live-verified on this or a predecessor deployment with identical application logic for everything except the specific fix being verified (the four-agreement API/agent lifecycle walkthrough and `recover_inconclusive` ran on `0xD5602E88...`; the escrow lifecycle ran on `0xbE2a981...`; the resubmission fix and the newly-closed capability gaps ran on `0x2671cd7...`), rather than re-running every prior demonstration on every new deployment, since that would be a repeat of evidence already gathered. If the contract source changes again, this document and any specific deployment must be treated as stale together, per the brief's "any source fix invalidates prior deployment-source evidence" rule — the per-section status notes above are the authoritative statement of what each deployed address does and does not include.
