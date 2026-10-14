@@ -97,6 +97,8 @@ MAX_RATIONALE_CHARS = 4_000
 MAX_FETCH_BYTES = 200_000
 MAX_AGENT_EXCERPT_CHARS = 4_000  # per-source text handed to the LLM judge, after MAX_FETCH_BYTES truncation
 PAGE_SIZE_MAX = 50
+MAX_MILESTONES = 8  # bounded count, analogous to MAX_CRITERIA
+MAX_WARRANTY_BPS = 5_000  # warranty holdback cannot exceed 50% of a release
 
 POLICY_ID = "speclock-core"
 POLICY_VERSION = 1
@@ -139,6 +141,15 @@ PHASE_EXPIRED = "EXPIRED"
 PHASE_RESUBMISSION_REQUESTED = "RESUBMISSION_REQUESTED"
 PHASE_RECOVERY_PENDING = "RECOVERY_PENDING"
 PHASE_REFUNDED = "REFUNDED"
+
+# Capability 30: a milestone's own phase machine, independent of the
+# agreement-level PHASE_* constants above.
+MS_PENDING = "MS_PENDING"
+MS_PROVISIONAL_VERDICT = "MS_PROVISIONAL_VERDICT"
+MS_FINALIZED = "MS_FINALIZED"
+MS_SETTLED = "MS_SETTLED"
+MS_RECOVERY_PENDING = "MS_RECOVERY_PENDING"
+MS_REFUNDED = "MS_REFUNDED"
 
 TERMINAL_PHASES = (PHASE_SETTLED, PHASE_CANCELLED, PHASE_EXPIRED, PHASE_REFUNDED)
 
@@ -281,6 +292,12 @@ class Agreement:
     buyer_wants_procedural_review: bool
     provider_wants_procedural_review: bool
     procedural_review_used: bool
+    uses_milestones: bool
+    milestones_defined: bool
+    warranty_bps: u256  # 0 = disabled; fraction (basis points) of a PASS/PARTIAL release withheld as a warranty holdback
+    warranty_held_amount: u256
+    warranty_status: str  # NONE | HELD | CLAIMED | RELEASED
+    latest_warranty_claim_id: str
 
 
 @allow_storage
@@ -350,6 +367,64 @@ class ReputationCounter:
     fail_outcomes: u256
 
 
+@allow_storage
+@dataclass
+class Milestone:
+    """Capability 30: an agreement may opt into milestone decomposition
+    (`define_milestones`, called once, before freeze) instead of the
+    default single-evaluation lifecycle. Each milestone owns a disjoint
+    subset of the agreement's criteria and a disjoint slice of the
+    agreement's `funded_amount` (both invariants enforced at definition
+    time — see `define_milestones`), and is evaluated, finalized, and
+    settled independently via its own phase machine, reusing the same
+    deterministic evaluator functions, `_credit` pull-payment pattern, and
+    `Evaluation`/`Settlement` records as the non-milestone path. Because
+    `settle_milestone` only ever moves `milestone.allocated_amount` — never
+    `agreement.funded_amount` — one milestone cannot settle for more than
+    its own slice, and the one-time `settlement_id == ""` guard (identical
+    to the agreement-level guard in `_settle`) makes it structurally
+    impossible for one milestone's settlement to be re-applied or to
+    overwrite another milestone's record."""
+
+    milestone_id: str
+    agreement_id: str
+    criteria_ids_json: str  # JSON array of criterion ids, disjoint from every other milestone on this agreement
+    allocated_amount: u256  # this milestone's slice of funded_amount; sum across all milestones == funded_amount exactly
+    phase: str  # MS_PENDING | MS_PROVISIONAL_VERDICT | MS_FINALIZED | MS_SETTLED | MS_RECOVERY_PENDING | MS_REFUNDED
+    latest_evaluation_id: str
+    settlement_id: str
+    released_amount: u256
+    refunded_amount: u256
+    retained_amount: u256
+    buyer_ready_to_finalize: bool
+    provider_ready_to_finalize: bool
+
+
+@allow_storage
+@dataclass
+class WarrantyClaim:
+    """Capability 33: resolved via the same validator-adjudicated
+    re-evaluation mechanism as an ordinary appeal (a real bond, a real
+    re-judgment of the originally-warrantied criteria against freshly
+    submitted evidence) — never an automatic, wall-clock-timed expiry,
+    since this runtime has no trustworthy time source (see the module
+    docstring and `docs/THREAT_MODEL.md`). If the buyer never files a
+    claim and never waives it, the held amount remains held indefinitely;
+    this is the same disclosed liveness trade-off as capability 12, not a
+    new or hidden one."""
+
+    claim_id: str
+    agreement_id: str
+    grounds: str
+    evidence_url: str
+    evidence_digest: str
+    evidence_metadata_json: str
+    bond_amount: u256
+    bond_settled: bool
+    resolution: str  # FILED_UNADJUDICATED | UPHELD | REJECTED
+    resolution_evaluation_id: str
+
+
 class SpecLock(gl.Contract):
     next_agreement_seq: u256
     next_evidence_seq: u256
@@ -369,6 +444,11 @@ class SpecLock(gl.Contract):
     claimable: TreeMap[str, u256]  # address str -> real native atto credited, awaiting withdraw()
     value_in_total: u256   # lifetime real native value received via payable calls
     value_out_total: u256  # lifetime real native value actually paid out via withdraw()
+    next_milestone_seq: u256
+    next_warranty_claim_seq: u256
+    milestones: TreeMap[str, Milestone]
+    milestone_index: TreeMap[str, DynArray[str]]  # agreement_id -> milestone ids, in order
+    warranty_claims: TreeMap[str, WarrantyClaim]
 
     def __init__(self) -> None:
         self.next_agreement_seq = u256(1)
@@ -379,6 +459,8 @@ class SpecLock(gl.Contract):
         self.seq = u256(0)
         self.value_in_total = u256(0)
         self.value_out_total = u256(0)
+        self.next_milestone_seq = u256(1)
+        self.next_warranty_claim_seq = u256(1)
 
     # ---------------------------------------------------------------
     # internal helpers
@@ -511,6 +593,12 @@ class SpecLock(gl.Contract):
             buyer_wants_procedural_review=False,
             provider_wants_procedural_review=False,
             procedural_review_used=False,
+            uses_milestones=False,
+            milestones_defined=False,
+            warranty_bps=u256(0),
+            warranty_held_amount=u256(0),
+            warranty_status="NONE",
+            latest_warranty_claim_id="",
         )
         self.agreements[agreement_id] = agreement
         self.evidence_index.get_or_insert_default(agreement_id)
@@ -550,6 +638,107 @@ class SpecLock(gl.Contract):
         self.agreements[agreement_id] = agreement
 
     @gl.public.write
+    def enable_warranty(self, agreement_id: str, warranty_bps: int) -> None:
+        """Capability 33: opt an already-funded agreement into a warranty
+        holdback. Callable exactly once, by the buyer, while the agreement
+        is FUNDED (after deposit, before freeze) and not using milestones
+        (a disclosed, deliberate scope boundary — see `define_milestones`'s
+        own equivalent boundary with appeals/resubmission). `warranty_bps`
+        is the basis-points fraction of a PASS/PARTIAL release that
+        `settle()` will withhold into `warranty_held_amount` instead of
+        crediting the provider immediately, bounded by `MAX_WARRANTY_BPS`
+        (50%) so a buyer cannot configure a holdback that swallows the
+        entire payment. The holdback is resolved later by
+        `file_warranty_claim`/`resolve_warranty_claim` (a real,
+        bonded re-judgment against freshly submitted evidence — never an
+        automatic wall-clock expiry) or by the buyer's own
+        `waive_warranty_claim`."""
+        agreement = self._get_agreement(agreement_id)
+        self._require(agreement.phase == PHASE_FUNDED, "warranty can only be enabled while FUNDED (after deposit, before freeze)")
+        caller = gl.message.sender_address
+        self._require(caller == agreement.buyer, "only the buyer may enable warranty")
+        self._require(not agreement.uses_milestones, "warranty is not yet supported for milestone-based agreements")
+        self._require(int(agreement.warranty_bps) == 0, "warranty already configured for this agreement")
+        self._require(1 <= warranty_bps <= MAX_WARRANTY_BPS, "warranty_bps out of bounds")
+        agreement.warranty_bps = u256(warranty_bps)
+        self.agreements[agreement_id] = agreement
+
+    @gl.public.write
+    def define_milestones(self, agreement_id: str, milestone_specs: list) -> list:
+        """Capability 30: opt an already-funded agreement into milestone
+        decomposition instead of the default single-evaluation lifecycle.
+        Callable exactly once, by the buyer, while the agreement is FUNDED
+        (after the real deposit, before freeze — so `funded_amount` is
+        fixed and known). `milestone_specs` is a list of
+        `{"criteria_ids": [...], "amount": int}`. Two invariants are
+        enforced here, deterministically, before a single milestone record
+        is created: every criterion id defined on the agreement belongs to
+        **exactly one** milestone (no omissions, no overlaps — this is what
+        makes it structurally impossible for one milestone's evaluation to
+        affect another's), and the milestone amounts sum to **exactly**
+        `funded_amount` (not more, not less — this is what makes it
+        structurally impossible for milestone payouts, in total, to ever
+        exceed the real deposit). After this call, the agreement proceeds
+        through `freeze_agreement` normally, but evaluation/finalization/
+        settlement happen per-milestone via `request_milestone_evaluation`/
+        `finalize_milestone`/`settle_milestone` instead of the top-level
+        `request_evaluation`/`finalize_verdict`/`settle`, which are
+        rejected for a milestone-using agreement (see their own guards).
+        Appeals, resubmission, and cancel/expire are not yet supported for
+        milestone agreements in this pass — a deliberate, disclosed scope
+        boundary, not an oversight; see docs/FEATURE_MATRIX.md #30."""
+        agreement = self._get_agreement(agreement_id)
+        self._require(agreement.phase == PHASE_FUNDED, "milestones can only be defined while FUNDED (after deposit, before freeze)")
+        caller = gl.message.sender_address
+        self._require(caller == agreement.buyer, "only the buyer may define milestones")
+        self._require(not agreement.milestones_defined, "milestones already defined for this agreement")
+        self._require(agreement.warranty_status == "NONE", "warranty is not yet supported for milestone-based agreements")
+        self._require(1 <= len(milestone_specs) <= MAX_MILESTONES, "milestone count out of bounds")
+
+        all_criteria_ids = {c["id"] for c in json.loads(agreement.criteria_json)}
+        seen_criteria_ids = set()
+        total_allocated = 0
+        for spec in milestone_specs:
+            criteria_ids = spec["criteria_ids"]
+            amount = int(spec["amount"])
+            self._require(len(criteria_ids) > 0, "each milestone needs at least one criterion")
+            self._require(amount > 0, "each milestone's allocated amount must be positive")
+            for cid in criteria_ids:
+                self._require(cid in all_criteria_ids, f"unknown criterion id in milestone spec: {cid}")
+                self._require(cid not in seen_criteria_ids, f"criterion id assigned to more than one milestone: {cid}")
+                seen_criteria_ids.add(cid)
+            total_allocated += amount
+        self._require(seen_criteria_ids == all_criteria_ids, "every criterion must belong to exactly one milestone")
+        self._require(total_allocated == int(agreement.funded_amount), "milestone amounts must sum exactly to the funded amount")
+
+        milestone_ids = []
+        for spec in milestone_specs:
+            milestone_id = f"{agreement_id}-ms{self.next_milestone_seq}"
+            self.next_milestone_seq = u256(int(self.next_milestone_seq) + 1)
+            milestone = Milestone(
+                milestone_id=milestone_id,
+                agreement_id=agreement_id,
+                criteria_ids_json=json.dumps(sorted(spec["criteria_ids"])),
+                allocated_amount=u256(int(spec["amount"])),
+                phase=MS_PENDING,
+                latest_evaluation_id="",
+                settlement_id="",
+                released_amount=u256(0),
+                refunded_amount=u256(0),
+                retained_amount=u256(0),
+                buyer_ready_to_finalize=False,
+                provider_ready_to_finalize=False,
+            )
+            self.milestones[milestone_id] = milestone
+            self.milestone_index.get_or_insert_default(agreement_id).append(milestone_id)
+            milestone_ids.append(milestone_id)
+
+        agreement.uses_milestones = True
+        agreement.milestones_defined = True
+        self.agreements[agreement_id] = agreement
+        return milestone_ids
+
+    @gl.public.write
     def freeze_agreement(self, agreement_id: str, acknowledge_ambiguity: bool) -> None:
         agreement = self._get_agreement(agreement_id)
         self._require(agreement.phase == PHASE_FUNDED, "agreement must be FUNDED before freeze")
@@ -587,6 +776,11 @@ class SpecLock(gl.Contract):
         self._require(
             agreement.phase in (PHASE_FROZEN, PHASE_RESUBMISSION_REQUESTED),
             f"agreement is not eligible for cancel/expire in phase {agreement.phase}",
+        )
+        self._require(
+            not agreement.uses_milestones,
+            "cancel/expire wind-down is not yet supported for milestone-based agreements "
+            "(it would refund the full funded_amount even if some milestones have already settled independently)",
         )
         self._require(self._is_party(agreement, caller), "only a party may consent to wind-down")
         if caller == agreement.buyer:
@@ -679,6 +873,10 @@ class SpecLock(gl.Contract):
         narrower re-evaluation can never silently drop a criterion from the
         final result."""
         agreement = self._get_agreement(agreement_id)
+        self._require(
+            not agreement.uses_milestones,
+            "milestone-based agreements evaluate per-milestone via request_milestone_evaluation, not request_evaluation",
+        )
         self._require(
             agreement.phase in (PHASE_SUBMITTED, PHASE_RE_EVALUATING),
             "evaluation can only be requested after submission or during re-evaluation",
@@ -1041,6 +1239,7 @@ class SpecLock(gl.Contract):
         `UPHELD`, or to the other party if `REJECTED`; the credited party
         calls `withdraw()` to receive it (see the module docstring)."""
         agreement = self._get_agreement(agreement_id)
+        self._require(not agreement.uses_milestones, "appeals are not yet supported for milestone-based agreements")
         self._require(agreement.phase == PHASE_PROVISIONAL_VERDICT, "appeal only possible on a provisional verdict")
         now = self._next_seq()
         caller = gl.message.sender_address
@@ -1179,6 +1378,7 @@ class SpecLock(gl.Contract):
     @gl.public.write
     def request_resubmission(self, agreement_id: str) -> None:
         agreement = self._get_agreement(agreement_id)
+        self._require(not agreement.uses_milestones, "resubmission is not yet supported for milestone-based agreements")
         self._require(
             agreement.phase == PHASE_PROVISIONAL_VERDICT, "resubmission only possible on a provisional verdict"
         )
@@ -1296,11 +1496,26 @@ class SpecLock(gl.Contract):
     @gl.public.write
     def settle(self, agreement_id: str) -> str:
         agreement = self._get_agreement(agreement_id)
+        self._require(not agreement.uses_milestones, "milestone-based agreements settle per-milestone via settle_milestone, not settle")
         self._require(agreement.phase == PHASE_FINALIZED, "agreement is not finalized")
         self._require(agreement.settlement_id == "", "settlement already recorded for this agreement")
         evaluation = self.evaluations[agreement.latest_evaluation_id]
         funded = int(agreement.funded_amount)
         released, refunded, retained, terminal_phase = self._compute_settlement_amounts(funded, evaluation)
+        # Capability 33: a configured warranty_bps diverts part of a real
+        # release into a holdback instead of crediting the provider
+        # immediately. The holdback is folded into `retained` so the
+        # conservation check in `_settle` (released+refunded+retained ==
+        # funded) still holds exactly; `warranty_held_amount`/
+        # `warranty_status` record it separately for later resolution.
+        warranty_bps = int(agreement.warranty_bps)
+        if warranty_bps > 0 and released > 0 and terminal_phase == PHASE_SETTLED:
+            holdback = (released * warranty_bps) // 10_000
+            if holdback > 0:
+                released -= holdback
+                retained += holdback
+                agreement.warranty_held_amount = u256(holdback)
+                agreement.warranty_status = "HELD"
         self._settle(agreement, released, refunded, retained, terminal_phase)
         return agreement.settlement_id
 
@@ -1313,6 +1528,289 @@ class SpecLock(gl.Contract):
         funded = int(agreement.funded_amount)
         self._settle(agreement, released=0, refunded=funded, retained=0, terminal_phase=PHASE_REFUNDED)
         return agreement.settlement_id
+
+    # ---------------------------------------------------------------
+    # Capability 33: warranty claim lifecycle
+    # ---------------------------------------------------------------
+
+    @gl.public.write
+    def waive_warranty_claim(self, agreement_id: str) -> None:
+        """Buyer-triggered release: the buyer may, at any time while the
+        holdback is HELD and unclaimed, simply release it to the provider
+        rather than filing a claim. This is the only non-adjudicated path
+        by which the holdback moves — it requires the buyer's own
+        affirmative action, never a timer, so it cannot be used to force
+        a release the buyer never consented to."""
+        agreement = self._get_agreement(agreement_id)
+        self._require(agreement.warranty_status == "HELD", "no active warranty holdback to waive")
+        caller = gl.message.sender_address
+        self._require(caller == agreement.buyer, "only the buyer may waive a warranty holdback")
+        held = int(agreement.warranty_held_amount)
+        agreement.warranty_status = "RELEASED"
+        self.agreements[agreement_id] = agreement
+        self._credit(agreement.provider, held)
+
+    @gl.public.write.payable
+    def file_warranty_claim(self, agreement_id: str, grounds: str, evidence_url: str, evidence_digest: str, evidence_metadata_json: str) -> str:
+        """Capability 33: open a bonded, evidence-based claim against an
+        active warranty holdback. Mirrors `file_appeal`'s real-value-bond
+        pattern (`max(1, held // 10)`, sent as this call's native value,
+        refunded via `claimable` to whichever side the resolution favors)
+        so a frivolous claim has a real cost. The evidence is recorded now;
+        `resolve_warranty_claim` performs the actual validator-adjudicated
+        re-judgment against it (never at filing time), exactly as
+        `resolve_appeal` defers judgment past `file_appeal`."""
+        agreement = self._get_agreement(agreement_id)
+        self._require(agreement.warranty_status == "HELD", "no active warranty holdback to claim against")
+        caller = gl.message.sender_address
+        self._require(caller == agreement.buyer, "only the buyer may file a warranty claim")
+        self._require(1 <= len(grounds) <= MAX_APPEAL_GROUNDS_CHARS, "warranty claim grounds length out of bounds")
+        _validate_url(evidence_url)
+        self._require(len(evidence_digest) == 64, "evidence_digest must be a sha256 hex digest")
+        self._require(len(evidence_metadata_json) <= MAX_EVIDENCE_METADATA_CHARS, "evidence metadata too large")
+
+        held = int(agreement.warranty_held_amount)
+        required_bond = max(1, held // 10)
+        sent_value = int(gl.message.value)
+        self._require(sent_value == required_bond, f"warranty claim bond must be exactly {required_bond}")
+        self.value_in_total = u256(int(self.value_in_total) + sent_value)
+
+        claim_id = f"{agreement_id}-wc{self.next_warranty_claim_seq}"
+        self.next_warranty_claim_seq = u256(int(self.next_warranty_claim_seq) + 1)
+        claim = WarrantyClaim(
+            claim_id=claim_id,
+            agreement_id=agreement_id,
+            grounds=grounds,
+            evidence_url=evidence_url,
+            evidence_digest=evidence_digest.lower(),
+            evidence_metadata_json=evidence_metadata_json,
+            bond_amount=u256(required_bond),
+            bond_settled=False,
+            resolution="FILED_UNADJUDICATED",
+            resolution_evaluation_id="",
+        )
+        self.warranty_claims[claim_id] = claim
+        agreement.warranty_status = "CLAIMED"
+        agreement.latest_warranty_claim_id = claim_id
+        self.agreements[agreement_id] = agreement
+        return claim_id
+
+    @gl.public.write
+    def resolve_warranty_claim(self, agreement_id: str) -> None:
+        """Capability 33: the real resolution step. Re-judges every
+        criterion of the original agreement against the claim's freshly
+        submitted evidence, using the exact same consensus-adjudicated
+        evaluator functions (`_evaluate_api_profile`/`_evaluate_agent_profile`)
+        as the ordinary evaluation path — never a leader's unverified say-so.
+        A FAIL or PARTIAL re-judgment UPHOLDS the claim (the holdback is
+        refunded to the buyer); a full PASS REJECTS it (the holdback is
+        released to the provider). The bond is credited back via the same
+        pattern as `resolve_appeal`: to the buyer if UPHELD, to the
+        provider if REJECTED."""
+        agreement = self._get_agreement(agreement_id)
+        self._require(agreement.warranty_status == "CLAIMED", "no warranty claim pending resolution")
+        claim = self.warranty_claims[agreement.latest_warranty_claim_id]
+        self._require(claim.resolution == "FILED_UNADJUDICATED", "warranty claim already resolved")
+
+        receipt = EvidenceReceipt(
+            receipt_id=f"{claim.claim_id}-ev",
+            agreement_id=agreement_id,
+            submitter=agreement.buyer,
+            role="buyer",
+            url=claim.evidence_url,
+            content_digest=claim.evidence_digest,
+            metadata_json=claim.evidence_metadata_json,
+            status="FROZEN",
+            submitted_at=u256(self._next_seq()),
+        )
+        all_criteria = json.loads(agreement.criteria_json)
+        if agreement.profile == PROFILE_API:
+            result = self._evaluate_api_profile(all_criteria, [receipt])
+        else:
+            result = self._evaluate_agent_profile(all_criteria, [receipt])
+        findings = result["findings"]
+        ambiguous_ids = {a["criterion_id"] for a in json.loads(agreement.ambiguity_report)}
+        findings = self._apply_specification_attribution(findings, ambiguous_ids)
+        overall = self._derive_overall(findings, all_criteria)
+        attribution = self._derive_aggregate_attribution(findings, all_criteria)
+
+        evaluation_id = f"{claim.claim_id}-eval"
+        evaluation = Evaluation(
+            evaluation_id=evaluation_id,
+            agreement_id=agreement_id,
+            round=u256(0),
+            profile=agreement.profile,
+            evidence_snapshot_commitment=hashlib.sha256(claim.evidence_digest.encode()).hexdigest(),
+            findings_json=json.dumps(findings, sort_keys=True),
+            overall_finding=overall,
+            failure_attribution=attribution,
+            status="FINAL",
+            created_at=u256(self._next_seq()),
+        )
+        self.evaluations[evaluation_id] = evaluation
+
+        held = int(agreement.warranty_held_amount)
+        claim.resolution_evaluation_id = evaluation_id
+        claim.resolution = "REJECTED" if overall == FINDING_PASS else "UPHELD"
+        self.warranty_claims[claim.claim_id] = claim
+
+        if claim.resolution == "UPHELD":
+            self._credit(agreement.buyer, held)
+        else:
+            self._credit(agreement.provider, held)
+        # Both outcomes are terminal for the holdback: UPHELD means it went
+        # to the buyer (status stays "CLAIMED", recording that a claim was
+        # adjudicated and paid out); REJECTED means it went to the provider
+        # ("RELEASED", same terminal meaning as an unclaimed waiver).
+        agreement.warranty_status = "CLAIMED" if claim.resolution == "UPHELD" else "RELEASED"
+        agreement.warranty_held_amount = u256(0)
+        self.agreements[agreement_id] = agreement
+
+        bond = int(claim.bond_amount)
+        if bond > 0 and not claim.bond_settled:
+            claim.bond_settled = True
+            self.warranty_claims[claim.claim_id] = claim
+            if claim.resolution == "UPHELD":
+                self._credit(agreement.buyer, bond)
+            else:
+                self._credit(agreement.provider, bond)
+
+    # ---------------------------------------------------------------
+    # Capability 30: per-milestone evaluation, finalization, and settlement
+    # ---------------------------------------------------------------
+
+    def _get_milestone(self, agreement_id: str, milestone_id: str) -> "Milestone":
+        self._require(milestone_id in self.milestones, "unknown milestone_id")
+        milestone = self.milestones[milestone_id]
+        self._require(milestone.agreement_id == agreement_id, "milestone does not belong to this agreement")
+        return milestone
+
+    def _settle_milestone(self, agreement: Agreement, milestone: "Milestone", released: int, refunded: int, retained: int, terminal_phase: str) -> None:
+        """The milestone-scoped counterpart to `_settle`. Uses
+        `milestone.allocated_amount` -- never `agreement.funded_amount` --
+        as the conservation bound, and writes only to the milestone's own
+        record, never the agreement's. This is what makes it structurally
+        impossible for one milestone's settlement to pay out more than its
+        own allocated slice or to touch another milestone's funds."""
+        allocated = int(milestone.allocated_amount)
+        self._require(released + refunded + retained == allocated, "milestone settlement must exactly reconcile its allocated amount")
+        self._require(released >= 0 and refunded >= 0 and retained >= 0, "milestone settlement amounts must be nonnegative")
+        settlement_id = f"{milestone.milestone_id}-st{self.next_settlement_seq}"
+        self.next_settlement_seq = u256(int(self.next_settlement_seq) + 1)
+        settlement = Settlement(
+            settlement_id=settlement_id,
+            agreement_id=agreement.agreement_id,
+            released_to_provider=u256(released),
+            refunded_to_buyer=u256(refunded),
+            retained=u256(retained),
+            terminal_phase=terminal_phase,
+            settled_at=u256(self._next_seq()),
+            claimed=True,
+        )
+        self.settlements[settlement_id] = settlement
+        milestone.released_amount = u256(released)
+        milestone.refunded_amount = u256(refunded)
+        milestone.retained_amount = u256(retained)
+        milestone.settlement_id = settlement_id
+        milestone.phase = terminal_phase
+        self.milestones[milestone.milestone_id] = milestone
+        self._credit(agreement.provider, released)
+        self._credit(agreement.buyer, refunded)
+
+    @gl.public.write
+    def request_milestone_evaluation(self, agreement_id: str, milestone_id: str) -> str:
+        agreement = self._get_agreement(agreement_id)
+        self._require(agreement.uses_milestones, "agreement does not use milestones")
+        milestone = self._get_milestone(agreement_id, milestone_id)
+        self._require(milestone.phase == MS_PENDING, "milestone evaluation already requested or completed")
+        caller = gl.message.sender_address
+        self._require(self._is_party(agreement, caller), "only a party may request milestone evaluation")
+
+        self._freeze_all_evidence(agreement_id)
+        snapshot = self._evidence_snapshot_commitment(agreement_id)
+        all_criteria = json.loads(agreement.criteria_json)
+        milestone_criteria_ids = set(json.loads(milestone.criteria_ids_json))
+        criteria = [c for c in all_criteria if c["id"] in milestone_criteria_ids]
+        evidence_recs = [self.evidence[rid] for rid in self.evidence_index[agreement_id] if self.evidence[rid].status == "FROZEN"]
+
+        if agreement.profile == PROFILE_API:
+            result = self._evaluate_api_profile(criteria, evidence_recs)
+        else:
+            result = self._evaluate_agent_profile(criteria, evidence_recs)
+
+        findings = result["findings"]
+        ambiguous_ids = {a["criterion_id"] for a in json.loads(agreement.ambiguity_report)}
+        findings = self._apply_specification_attribution(findings, ambiguous_ids)
+        overall = self._derive_overall(findings, criteria)
+        attribution = self._derive_aggregate_attribution(findings, criteria)
+
+        evaluation_id = f"{milestone_id}-eval{self.next_evaluation_seq}"
+        self.next_evaluation_seq = u256(int(self.next_evaluation_seq) + 1)
+        evaluation = Evaluation(
+            evaluation_id=evaluation_id,
+            agreement_id=agreement_id,
+            round=u256(1),
+            profile=agreement.profile,
+            evidence_snapshot_commitment=snapshot,
+            findings_json=json.dumps(findings, sort_keys=True),
+            overall_finding=overall,
+            failure_attribution=attribution,
+            status="PROVISIONAL",
+            created_at=u256(self._next_seq()),
+        )
+        self.evaluations[evaluation_id] = evaluation
+        self.evaluation_history.get_or_insert_default(agreement_id).append(evaluation_id)
+        milestone.latest_evaluation_id = evaluation_id
+        milestone.phase = MS_PROVISIONAL_VERDICT
+        self.milestones[milestone_id] = milestone
+        return evaluation_id
+
+    @gl.public.write
+    def finalize_milestone(self, agreement_id: str, milestone_id: str) -> bool:
+        """Mutual-consent finalize, scoped to one milestone -- the same
+        pattern as `finalize_verdict`, for the same reason (no trustworthy
+        wall-clock time to decide an appeal/objection window has closed)."""
+        agreement = self._get_agreement(agreement_id)
+        milestone = self._get_milestone(agreement_id, milestone_id)
+        self._require(milestone.phase == MS_PROVISIONAL_VERDICT, "nothing to finalize for this milestone in its current phase")
+        caller = gl.message.sender_address
+        self._require(self._is_party(agreement, caller), "only a party may consent to finalize a milestone")
+        if caller == agreement.buyer:
+            self._require(not milestone.buyer_ready_to_finalize, "buyer has already consented to finalize this milestone")
+            milestone.buyer_ready_to_finalize = True
+        else:
+            self._require(not milestone.provider_ready_to_finalize, "provider has already consented to finalize this milestone")
+            milestone.provider_ready_to_finalize = True
+        if milestone.buyer_ready_to_finalize and milestone.provider_ready_to_finalize:
+            milestone.phase = MS_FINALIZED
+            self.milestones[milestone_id] = milestone
+            return True
+        self.milestones[milestone_id] = milestone
+        return False
+
+    @gl.public.write
+    def settle_milestone(self, agreement_id: str, milestone_id: str) -> str:
+        agreement = self._get_agreement(agreement_id)
+        milestone = self._get_milestone(agreement_id, milestone_id)
+        self._require(milestone.phase == MS_FINALIZED, "milestone is not finalized")
+        self._require(milestone.settlement_id == "", "settlement already recorded for this milestone")
+        evaluation = self.evaluations[milestone.latest_evaluation_id]
+        allocated = int(milestone.allocated_amount)
+        released, refunded, retained, terminal_phase = self._compute_settlement_amounts(allocated, evaluation)
+        ms_terminal_phase = MS_RECOVERY_PENDING if terminal_phase == PHASE_RECOVERY_PENDING else MS_SETTLED
+        self._settle_milestone(agreement, milestone, released, refunded, retained, ms_terminal_phase)
+        return milestone.settlement_id
+
+    @gl.public.write
+    def recover_milestone_inconclusive(self, agreement_id: str, milestone_id: str) -> str:
+        agreement = self._get_agreement(agreement_id)
+        milestone = self._get_milestone(agreement_id, milestone_id)
+        self._require(milestone.phase == MS_RECOVERY_PENDING, "nothing to recover for this milestone")
+        caller = gl.message.sender_address
+        self._require(self._is_party(agreement, caller), "only a party may trigger milestone recovery")
+        allocated = int(milestone.allocated_amount)
+        self._settle_milestone(agreement, milestone, released=0, refunded=allocated, retained=0, terminal_phase=MS_REFUNDED)
+        return milestone.settlement_id
 
     @gl.public.write
     def withdraw(self) -> int:
@@ -1370,11 +1868,41 @@ class SpecLock(gl.Contract):
             "buyer_wants_procedural_review": a.buyer_wants_procedural_review,
             "provider_wants_procedural_review": a.provider_wants_procedural_review,
             "procedural_review_used": a.procedural_review_used,
+            "uses_milestones": a.uses_milestones,
+            "milestones_defined": a.milestones_defined,
+            "warranty_bps": int(a.warranty_bps),
+            "warranty_held_amount": int(a.warranty_held_amount),
+            "warranty_status": a.warranty_status,
+            "latest_warranty_claim_id": a.latest_warranty_claim_id,
         }
 
     @gl.public.view
     def get_criteria(self, agreement_id: str) -> list:
         return json.loads(self._get_agreement(agreement_id).criteria_json)
+
+    @gl.public.view
+    def get_milestone(self, milestone_id: str) -> dict:
+        self._require(milestone_id in self.milestones, "unknown milestone_id")
+        m = self.milestones[milestone_id]
+        return {
+            "milestone_id": m.milestone_id,
+            "agreement_id": m.agreement_id,
+            "criteria_ids": json.loads(m.criteria_ids_json),
+            "allocated_amount": int(m.allocated_amount),
+            "phase": m.phase,
+            "latest_evaluation_id": m.latest_evaluation_id,
+            "settlement_id": m.settlement_id,
+            "released_amount": int(m.released_amount),
+            "refunded_amount": int(m.refunded_amount),
+            "retained_amount": int(m.retained_amount),
+            "buyer_ready_to_finalize": m.buyer_ready_to_finalize,
+            "provider_ready_to_finalize": m.provider_ready_to_finalize,
+        }
+
+    @gl.public.view
+    def get_milestones(self, agreement_id: str) -> list:
+        ids = list(self.milestone_index[agreement_id]) if agreement_id in self.milestone_index else []
+        return [self.get_milestone(mid) for mid in ids]
 
     @gl.public.view
     def get_evidence_receipt(self, receipt_id: str) -> dict:
@@ -1422,6 +1950,21 @@ class SpecLock(gl.Contract):
             "grounds": a.grounds,
             "resolution": a.resolution,
             "resolution_evaluation_id": a.resolution_evaluation_id,
+        }
+
+    @gl.public.view
+    def get_warranty_claim(self, claim_id: str) -> dict:
+        if claim_id not in self.warranty_claims:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} unknown claim_id")
+        c = self.warranty_claims[claim_id]
+        return {
+            "claim_id": c.claim_id,
+            "agreement_id": c.agreement_id,
+            "grounds": c.grounds,
+            "evidence_url": c.evidence_url,
+            "bond_amount": int(c.bond_amount),
+            "resolution": c.resolution,
+            "resolution_evaluation_id": c.resolution_evaluation_id,
         }
 
     @gl.public.view
