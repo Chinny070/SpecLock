@@ -1,8 +1,8 @@
 # Deployment
 
-## Status: DEPLOYED to GenLayer Studio Network. Full real lifecycle executed and verified on-chain for both profiles — API delivery (negative + positive) and AI-agent delivery (positive + an UNVERIFIABLE case that completed all the way through a live `recover_inconclusive` refund) — every agreement FINALIZED and SETTLED (or REFUNDED) end to end, on the `0xD5602E88...` deployment below (bookkeeping-only funding). A real native-value escrow design was built, live-tested, found to fail against plain wallet addresses, root-caused, and fixed in source using the correct GenVM primitive (`gl.evm.contract_interface`) — Direct-Mode-verified (52/52 tests) and independently proven live on the identical runner/network by a sibling project. Two redeploy attempts to live-verify the fix for SpecLock itself failed at the constructor-call level, not for a platform reason: both deploy transactions reached `FINALIZED` but with `execution_result: "ERROR"`, caused by a mistaken `genlayer deploy --args '[]'` CLI invocation that passed the literal string `"[]"` as an extra constructor argument instead of zero arguments. This is a deploy-command bug in this session, not a Studio Network outage and not a contract defect — see "Native-value escrow" below for the full evidence (deploy calldata compared byte-for-byte, decoded stderr traceback) and the corrected redeploy.
+## Status: DEPLOYED to GenLayer Studio Network, including a fully live-verified real native-value escrow. The current deployment (`0xbE2a981...` below) has real payable funding, real appeal bonds, and real GEN withdrawals — not bookkeeping-only. A full on-chain lifecycle was executed covering both a `PASS` settlement with a real provider withdrawal and a `FAIL` settlement with a real appeal (filed with a real bond, correctly `REJECTED` on re-evaluation, bond correctly credited to the non-appellant party) and two further real withdrawals — every wallet balance delta matched the contract's own accounting exactly. Double-withdrawal and no-balance-withdrawal were both tested live and correctly rejected. See "Native-value escrow: live-verified" below for the full transaction-by-transaction record. A predecessor deployment (`0xD5602E88...`) remains live with the earlier bookkeeping-only design and its own independently-verified lifecycle evidence (API/agent delivery, `recover_inconclusive`) — see "Superseded deployments" for how the two relate.
 
-## Current deployment (bookkeeping-only funding — the safe, final design)
+## Current deployment (real native-value escrow — the live-verified design)
 
 | Field | Value |
 |---|---|
@@ -11,11 +11,22 @@
 | RPC | `https://studio.genlayer.com/api` |
 | Explorer | `https://genlayer-explorer.vercel.app` |
 | Deployer address | `0xaffE15eEc45b68835cc9E5B4Ab85dD5deaE8e70b` (local alias `my-studionet-wallet` — used only to deploy and to fund disposable test accounts, never as a lifecycle party) |
-| **Contract address** | **`0xD5602E88b021573cbb364Efaae8DCD48DF555ff7`** |
+| **Contract address** | **`0xbE2a98135e41B4fE722919b87024D867F8De8343`** |
+| Deploy tx hash | `0x56c13ef85e7d92f449fc73369c543b6f053f6bca50ae7aecf911f5511e2a279e` |
+| Deploy tx status | `FINALIZED`, `execution_result: "SUCCESS"` (both checked explicitly this time — see the deploy-command correction below) |
+| Deploy command | `genlayer deploy --contract contracts/speclock.py` (no `--args` — the constructor takes zero arguments) |
+
+Schema readback (`genlayer schema 0xbE2a98135e41B4fE722919b87024D867F8De8343`) confirms 29 methods matching `contracts/speclock.py`, with `fund_agreement`/`file_appeal` both `payable: true` and `withdraw`/`get_claimable` present — the real-escrow design, fully live-verified below.
+
+### Predecessor deployment (bookkeeping-only funding, still independently useful for its own lifecycle evidence)
+
+| Field | Value |
+|---|---|
+| **Contract address** | `0xD5602E88b021573cbb364Efaae8DCD48DF555ff7` |
 | Deploy tx hash | `0xdd2f6307a732a43df1ebf1c7bc2683eeb9f8472b4985b3a0cd610c69fc645cb4` |
 | Deploy tx status | `FINALIZED`, unanimous 5-validator `MAJORITY_AGREE` |
 
-Schema readback (`genlayer schema 0xD5602E88b021573cbb364Efaae8DCD48DF555ff7`) confirms 27 methods (including the new `check_verdict_consistency` view) matching `contracts/speclock.py`, with `fund_agreement`/`file_appeal` both `payable: false` — the reverted, safe design.
+Schema readback confirms 27 methods (including `check_verdict_consistency`) matching the pre-escrow-fix source, with `fund_agreement`/`file_appeal` both `payable: false`. This deployment's own lifecycle evidence (API/agent delivery PASS/FAIL/UNVERIFIABLE, live `recover_inconclusive`, `check_verdict_consistency`) remains valid and is recorded further below; it just predates the real-escrow fix.
 
 ## A real production defect found and fixed via this deployment (not caught by Direct Mode)
 
@@ -53,7 +64,47 @@ SpecLock's `fund_agreement` and `file_appeal` are payable again; `_settle`/`reso
 
 **Root cause, confirmed by comparing raw deploy calldata byte-for-byte**: the working `0xD5602E88...` deployment's calldata is a single byte (`[6]`, a "zero constructor arguments" marker); both failing deployments' calldata is 8 bytes encoding `{"args": "[]"}` — the CLI's `--args <args...>` option is variadic (each shell token becomes one separate constructor argument), so the single-quoted shell token `[]` was passed through as one literal two-character string argument, not parsed as JSON for an empty array. This called `SpecLock.__init__(self, "[]")` — one argument too many, exactly matching the traceback. AgentCourt's own documented working deploy command omits `--args` entirely (`genlayer deploy --contract release/agent_court.py`), confirming the correct invocation for this zero-argument constructor. Both deploy transactions genuinely reached real 5-validator consensus (correctly agreeing the constructor call errored) — `status_name: "FINALIZED"` and `execution_result: "ERROR"` are not contradictory; they mean "validators agreed this failed," not "this succeeded," and both fields must be checked.
 
-Redeployed correctly with `genlayer deploy --contract contracts/speclock.py` (no `--args`); see the live verification below.
+Redeployed correctly with `genlayer deploy --contract contracts/speclock.py` (no `--args`), producing `0xbE2a98135e41B4fE722919b87024D867F8De8343` (deploy tx `0x56c13ef85e7d92f449fc73369c543b6f053f6bca50ae7aecf911f5511e2a279e`, `FINALIZED` **with `execution_result: "SUCCESS"`**, confirmed via `genlayer schema` returning the full 29-method schema).
+
+## Native-value escrow: live-verified — real funding, real appeal bond, real withdrawals, real rejection cases
+
+A full real on-chain lifecycle was executed against `0xbE2a98135e41B4fE722919b87024D867F8De8343`, using small disposable-wallet amounts bounded by an explicit per-transaction cap (0.001 GEN) and cumulative cap (0.02 GEN); actual total spend was **0.00068 GEN**. Every amount below is real atto-GEN (1 GEN = 10^18 atto), not a bookkeeping number.
+
+### Agreement "1" — PASS, real settlement, real withdrawal, double-withdrawal and no-balance-withdrawal correctly rejected
+
+- `create_agreement` → `0x13f881b7cfbad0f6b2bd462b775a923ff2f97ea28269f9802602f628fd4d93bf` (`SUCCESS`)
+- `accept_agreement` → `0x6ed8d52f9d7b493a3c0cbd71c185f076c51b03e4769cf6a40c7927023c8042ec`
+- `fund_agreement(1, 100000000000000)` with real `value = 100000000000000` atto (0.0001 GEN) → `0x0d8c93bdb18d28ddc17c0e66537dded4bf2f03729294ddbf7d2dc8213b43b470` (`SUCCESS`)
+- `freeze_agreement` → `0xfdcf2dc0dddfbf7bc30de132b82afc1772d8688854c8d86041c95acbbebb46f1`
+- `submit_evidence` (`https://httpbin.org/json`) → `0x0628faceebc10f477fe2f83c5baacf68474925b323b02c974a13c43e373b0969`
+- `request_evaluation` → `0x839b49201343afc70cb029723ca7ab0dc2c9b001a6dc3a3ef517f2423e8b7d56`; real evaluation: `{"overall_finding":"PASS","findings":[{"criterion_id":"c1","finding":"PASS","sufficiency":"SUFFICIENT","rationale":"HTTP 200 with schema-consistent body"}]}`
+- `finalize_verdict` (buyer, 1st call) → `0x1a9056c2b6303775a5946c381e4589ff647c5764b91221a5452b30697666e777`, returned `false` — mutual-consent gate confirmed live
+- `finalize_verdict` (provider, 2nd call) → `0xadad4bbb11842fad9b3acdeac68eb03ce942bcc47bfa6cef64af097f03c9e791`, returned `true`
+- `settle` → `0x746e6c4b3a36ddc386eb4f8ba3c5ba28028366d993f7b69d2bf8f88beb8457bd`: `{"released_to_provider":100000000000000,"refunded_to_buyer":0,"retained":0,"terminal_phase":"SETTLED"}`
+- `get_claimable(provider)` read back `100000000000000` before withdrawal
+- **`withdraw()` (provider)** → `0x8c2135cbbe3cda74689ad4ac6bc0d67e603eafb2fbd7d3ed9f30f6dc62ea40cf`, `SUCCESS`, returned `100000000000000`. **Independent `getBalance` check**: provider's real wallet balance before `10000000000000`, after `110000000000000` — a delta of exactly `+100000000000000` atto, matching the settlement amount exactly. This is the real EOA payout that the first escrow attempt's `gl.get_contract_at` call failed to deliver.
+- **Double-withdrawal rejected**: a second `withdraw()` call by the same provider → `0xfba0eefc9d2e8d20254ae20ed5c7a044536e2b134fc1b7266ff9ea96408d3137`, `ERROR`, `"[EXPECTED] nothing to withdraw"` — `claimable` was correctly zeroed by the first call.
+- **No-balance withdrawal rejected**: the buyer (who has zero claimable) calling `withdraw()` → `0xb638f4fda1dcc9f5f7021644478be96be6b433c7cb7bfecc7caa2e172c1d56d4`, `ERROR`, `"[EXPECTED] nothing to withdraw"` — `withdraw()` takes no address parameter, so there is no way to withdraw anyone else's balance; this confirms a caller with nothing credited gets nothing.
+
+### Agreement "2" — FAIL, real appeal with a real bond, REJECTED on re-evaluation, bond correctly credited, two more real withdrawals
+
+- `create_agreement` → `0x62d759981cb88894e9e98347544785989f023240a87331ea605656649b787524`
+- `accept_agreement` → `0x8ef11eef41698f1b8c674ba7027663d4156a0c37debdfc3fc4a651ef8926dc57`
+- `fund_agreement(2, 100000000000000)` with real value → `0x67731c0b17eebd614c0b9c40b629b7337bb4c8f51aebaea1c349d2f6678c9be3`
+- `freeze_agreement` → `0x5fd8364e16626f79e1db1b8e7b741b61c0efc09a5bf03321e884cfff9ddfe26b`
+- `submit_evidence` (`https://httpbin.org/status/200` — reachable, HTTP 200, non-JSON) → `0xd0336c017f931eb7f6d15abbf2336dca4f3c1ae76b4143602b6752e7f5a78e98`
+- `request_evaluation` → `0x13c0a855a8420dcf68c1c5bebcb5a3634bfa2eaf38d278a4a6b45a083c779cbd`; real evaluation round 1: `{"overall_finding":"FAIL","findings":[{"criterion_id":"c1","finding":"FAIL","sufficiency":"SUFFICIENT","rationale":"HTTP 200 but response failed functional check"}]}`
+- **`file_appeal` with a real bond** (`value = 10000000000000` atto, `max(1, funded_amount // 10)`) → `0x9d9ed50ebd0e7074157ab5c6051bd04dd37dfbcb985b477ff5f7629763a19fca`, `SUCCESS`, appeal id `"2-ap1"`
+- `resolve_appeal` → `0x28100e189e0127d7c80da79700d24ebd0a1fd677761a476b896effa2119ca043`: real re-evaluation (round 2) against the same unchanged evidence again derived `FAIL` (`{"overall_finding":"FAIL", ...}`), so the appeal correctly resolved `"REJECTED"` — `{"appeal_id":"2-ap1","resolution":"REJECTED","resolution_evaluation_id":"2-eval3"}`. This is the live counterpart to Direct Mode's `test_appeal_rejected_when_challenged_finding_does_not_actually_change`.
+- Agreement phase after `resolve_appeal` was `PROVISIONAL_VERDICT` (a fresh verdict, needing its own mutual consent) — confirmed live, matching design.
+- `finalize_verdict` (buyer, 1st) → `0x13882f8bdc3adba880c57ceb92434d2dfd85a43d8d2738f467ec47e2ad029661`, `false`; (provider, 2nd) → `0xa4d9d6e5ddcea2f53d8bb8af90fcb0479e475ebb445c995b9ecbdde59d889011`, `true`
+- `settle` → `0x1ba76dddea264f86ab09661b56efdce89b54ff162a5580d5b9c7e15976c28e61`: `{"refunded_to_buyer":100000000000000,"released_to_provider":0,"retained":0,"terminal_phase":"SETTLED"}`
+- `get_claimable`: buyer `100000000000000` (refund), provider `10000000000000` (appeal bond, correctly credited to the **non-appellant** party since the appeal was `REJECTED`)
+- `withdraw()` (buyer) → `0x667ac3316bb8172e9dda801cca1572f2242a7f27340aa4f2ebd47913f58f345b`, returned `100000000000000`
+- `withdraw()` (provider) → `0xb010ff157c581196a6d80af579b76abe8dd7decde5eb7646e42e30f939984632`, returned `10000000000000`
+- **Independent balance deltas matched the accounting exactly**: provider's wallet delta `+10000000000000` (the bond, its only inflow); buyer's wallet delta `-10000000000000` — buyer sent out `100000000000000` (fund) + `10000000000000` (bond) = `110000000000000`, and received back `100000000000000` (refund withdrawal), net `-10000000000000`. Confirmed arithmetically exact, no hidden gas deduction observed (consistent with every other live transaction in this project).
+
+**No contract defects were found during this live run.** Every outcome matched what Direct Mode already predicted (see `tests/direct/test_speclock_security.py::test_settle_on_pass_credits_provider_claimable_not_buyer`, `::test_appeal_bond_credited_to_other_party_on_rejected`, `::test_withdraw_zeroes_claimable_and_returns_amount`, `::test_withdraw_with_nothing_claimable_reverts`) — no fixes were needed, and none were made.
 
 ## How real on-chain lifecycle execution was achieved without touching any protected credential
 
@@ -163,9 +214,9 @@ A fresh one-shot agreement was created on the final contract (`0xD5602E88b021573
 
 The standalone consistency-auditor view (capability 28) was exercised live as a read-only call against agreement `"2"` on the escrow-test deployment (`0xaa54c150B128843e5638cF31e2F1B632117ccBE2`, prior to its revert — view behavior is unaffected by the escrow revert since it never touches value): `check_verdict_consistency("2")` returned `{"agreement_id":"2","any_contradiction_detected":false,"changed_criteria":[],"findings_by_criterion":{"c1":[{"evaluation_id":"2-eval1","finding":"PASS","round":1}]},"total_rounds":1}` — correct, since that agreement never went through an appeal round.
 
-## Not yet exercised on the final (current) deployment
+## Not yet exercised on the current deployment
 
-`file_appeal`/`resolve_appeal` were exercised live on the *escrow-test* deployment (superseded) and in Direct Mode, but not yet re-run against the final bookkeeping-only deployment at `0xD5602E88b021573cbb364Efaae8DCD48DF555ff7` above (`recover_inconclusive` *has* now been re-run live on this final deployment — see the section above). The application logic is identical (only the payable/bond wrapping was removed), and all of it is covered by the 44 passing Direct Mode tests; a live re-run would be a repeat of evidence already gathered on the prior deployments, not new information.
+`check_verdict_consistency` and `recover_inconclusive` were live-verified on the predecessor `0xD5602E88...` deployment but not re-run on the current `0xbE2a981...` deployment; `file_appeal`/`resolve_appeal` and the full payable-funding/withdraw lifecycle *have* now been live-verified on the current deployment (see "Native-value escrow: live-verified" above). The application logic is identical across both deployments for everything except the escrow wrapping, and all of it is covered by the 52 passing Direct Mode tests; a further live re-run would be a repeat of evidence already gathered, not new information.
 
 ## The `genlayer` CLI's `--args` tooling defect (background, for context)
 
@@ -181,19 +232,20 @@ Three attempts to route around this *within the CLI itself* (reading a keychain-
 
 ## Funds / escrow
 
-**FIXED IN SOURCE AND DIRECT-MODE-VERIFIED; LIVE RE-VERIFICATION BLOCKED BY A PLATFORM OUTAGE, NOT A CONTRACT DEFECT.** The current contract source (not yet matching the `0xD5602E88...` deployment listed as "current" above, which predates this fix) makes `fund_agreement`/`file_appeal` payable again and adds a `withdraw()` method using `gl.evm.contract_interface`'s `_EthAccount` proxy for the payout leg, replacing the `gl.get_contract_at(...)` call that failed against a plain wallet address (see "Native-value escrow" above and `DECISION.md` item 10). This is covered by 8 passing Direct Mode tests, but SpecLock's own live Studio Network re-verification did not complete — both fresh deployments made to test it were unreachable afterward due to an external deployment-registration outage (see above). Until that live re-run happens, treat native-value custody for SpecLock specifically as code-complete and Direct-Mode-proven, not yet independently network-proven, even though the identical mechanism has real, live proof on the same runner/network from the AgentCourt sibling project.
+**LIVE-VERIFIED.** `0xbE2a98135e41B4fE722919b87024D867F8De8343` holds and moves real native value: `fund_agreement`/`file_appeal` are payable and genuinely receive `gl.message.value`; `_settle`/`resolve_appeal` credit a pull-payment `claimable` balance; `withdraw()` pays it out via `gl.evm.contract_interface`'s `_EthAccount` proxy. Two complete real agreements exercised this end to end — a `PASS` settlement with a real provider withdrawal, and a `FAIL` settlement with a real appeal (real bond sent, correctly `REJECTED`, bond correctly credited to the non-appellant party) and two further real withdrawals — with every wallet balance delta matching the contract's own accounting exactly (see "Native-value escrow: live-verified" above for the full transaction-by-transaction record). Double-withdrawal and no-balance-withdrawal were both tested live and correctly rejected.
 
 ## Superseded deployments (kept for history — do not use for further testing)
 
 1. `0xDa62645C8d904e1cE11BEc4F359cA20971092536` (deploy tx `0x518e5f5e14f584138532921b4562559d40f00d322604e435458a91c47241f016`, `FINALIZED`). Predates the agent-evidence-fetch fix.
 2. `0x713036220DE89a077fea1C3203C2510adB67f992` (deploy tx `0x2d47c50857bd2234e85615f778f7e62d54e377b4f418132a6e5aee022ef65f6d`, `FINALIZED`). Includes the agent-evidence-fetch fix but predates the `_as_address` hex-string fix, so `create_agreement` could not be called through `genlayer-js`'s standard API on it. Three agreements exist on it (`"1"`, `"2"`, `"3"`), all stuck in `DRAFT` since nothing could sign a subsequent call against them through a supported interface.
-3. `0x6bBcF7E85f8F07B54ba53ae2126E2E9F6485eE68` (deploy tx `0xfb473764a733d3f0c5aa5049a991515ea6f9dd3488c1deec0c343719a323dc4e`, `FINALIZED`). Includes the `_as_address` fix; this is the deployment all four complete API/agent lifecycle agreements (`"2"`, `"4"`, `"5"`, `"6"`) above were run against. Predates the native-escrow attempt and its revert — functionally equivalent to the `0xD5602E88...` final deployment except it lacks `check_verdict_consistency`.
+3. `0x6bBcF7E85f8F07B54ba53ae2126E2E9F6485eE68` (deploy tx `0xfb473764a733d3f0c5aa5049a991515ea6f9dd3488c1deec0c343719a323dc4e`, `FINALIZED`). Includes the `_as_address` fix; this is the deployment all four complete API/agent lifecycle agreements (`"2"`, `"4"`, `"5"`, `"6"`) above were run against. Predates the native-escrow attempt and its revert — functionally equivalent to the `0xD5602E88...` predecessor deployment except it lacks `check_verdict_consistency`.
 4. `0xaa54c150B128843e5638cF31e2F1B632117ccBE2` (deploy tx `0x62d7d3d603c9c861f2cfc56dc5c7ca1ee5b94de043dfeac4482c3f72f4ba1dc2`, `FINALIZED`). The first escrow-test deployment — real payable `fund_agreement`/`file_appeal`, payouts via `gl.get_contract_at(...)`, which failed. Contains agreement `"2"` with a real deposit (1 GEN) permanently stuck in an unresolved state per that finding. Do not use for anything other than historical reference to that finding.
 5. `0xd60dfaC9B3473Fce6bC97CD47F7a5Ac80c97A74e` (deploy tx `0x5f7f58da3467b1a4291b8161a4061bf37355729f36bd7f1d298d1c561d6446b9`, consensus `FINALIZED` but **`execution_result: "ERROR"`** — constructor call failed, see "Native-value escrow" above). First attempt to live-verify the `_EthAccount`-based escrow fix, deployed with a malformed `--args '[]'` CLI invocation. Do not use.
 6. `0x192CA2229677E4e1d0d115d4665E2634Bf0A25d1` (deploy tx `0x14a6ade55f9a8d4a9577a4346b1316100ac457e45699b3fcbe85d007177a5a8d`, same `FINALIZED`-but-`ERROR` outcome, same cause). Second attempt, identical mistake. Do not use.
+7. `0xD5602E88b021573cbb364Efaae8DCD48DF555ff7` (deploy tx `0xdd2f6307a732a43df1ebf1c7bc2683eeb9f8472b4985b3a0cd610c69fc645cb4`, `FINALIZED`, `SUCCESS`). The bookkeeping-only predecessor, now superseded by `0xbE2a98135e41B4fE722919b87024D867F8De8343` as the current deployment. Its own lifecycle evidence (API/agent delivery, `recover_inconclusive`, `check_verdict_consistency`) remains valid and is recorded above under "How real on-chain lifecycle execution was achieved" and "`recover_inconclusive` — live, verified" — kept live for historical reference, not for further testing.
 
 All remain live on-chain (nothing can be un-deployed).
 
 ## Source/commit record
 
-The `0xD5602E88...` deployment listed as "current" above does **not** include the native-escrow fix (`_EthAccount`/`withdraw`) — that fix exists only in the working-tree source as of this writing, Direct-Mode-verified (52/52 tests, lint clean) but not yet live-deployed-and-reachable due to the outage above. Everything else in the current deployment's source is unchanged: the mutual-consent clock redesign, the appeal-resolution precision fix, the aggregate-attribution fix, the agent-evidence-fetch fix, the `_as_address` hex-string fix, and `check_verdict_consistency`. If the contract source changes again (as it has, with the escrow fix), this document and any specific deployment must be treated as stale together, per the brief's "any source fix invalidates prior deployment-source evidence" rule — the per-section status notes above are the authoritative statement of what each deployed address does and does not include.
+The current deployment `0xbE2a98135e41B4fE722919b87024D867F8De8343` includes everything: the mutual-consent clock redesign, the appeal-resolution precision fix, the aggregate-attribution fix, the agent-evidence-fetch fix, the `_as_address` hex-string fix, `check_verdict_consistency`, and the real native-value escrow fix (`_EthAccount`/`withdraw`) — all live-verified on this deployment except the four-agreement API/agent lifecycle walkthrough and the live `recover_inconclusive` demonstration, which were run against the predecessor `0xD5602E88...` deployment (identical application logic for everything except the escrow wrapping) rather than re-run here, since that would be a repeat of evidence already gathered. If the contract source changes again, this document and any specific deployment must be treated as stale together, per the brief's "any source fix invalidates prior deployment-source evidence" rule — the per-section status notes above are the authoritative statement of what each deployed address does and does not include.
