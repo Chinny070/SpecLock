@@ -31,6 +31,10 @@ Every write method checks either exact caller identity (`accept_agreement` requi
 
 `spec_fingerprint = sha256(spec_text || criteria_json || policy_id || policy_version)`, computed once in `create_agreement` and never recomputed; `get_policy_fingerprint` exposes it as a view so a caller can confirm an agreement is still pinned to its original terms even after a newer `POLICY_VERSION` constant ships in a future contract revision.
 
+## Repository credential-exposure audit (performed on request)
+
+A full `git log --all -p` scan of this repository's history for password/private-key/seed-phrase patterns found exactly one real exposure: the local test keystore password for the `speclock-provider` account (a disposable account created during this project's live Studionet work, holding only a small amount of testnet GEN, never the repository owner's real wallet) was committed in plaintext in an early draft of `docs/RUNBOOK_REMAINING_STEPS.md` (commit `c13bbb1`). It was caught and redacted from the file content in a later commit (`2116a79`) before being noticed as still present in history — **the password remains permanently visible in that commit's diff on GitHub**, since this repository's history has not been rewritten (this project does not force-push; see `DECISION.md`/git safety rules). Treat that keystore's password as burned: it must not be reused for anything else. No other credential pattern (private keys, seed phrases, API keys, other passwords) was found anywhere in the repository's full git history. No private key for `speclock-provider` or any other account was ever written to a file in this repository at any point — only the one password string, for a throwaway testnet-only account.
+
 ## What was NOT independently security-tested
 
 - No fuzzing/property-based testing was run (no `hypothesis` strategies written, though the `hypothesis` plugin is present in the test environment).

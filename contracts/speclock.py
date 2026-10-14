@@ -34,9 +34,21 @@ def _as_address(value) -> Address:
     """Defensively coerce an incoming Address-typed parameter. Some call
     paths (direct-mode test harness calldata roundtrips in particular) can
     hand back raw bytes for what the schema declares as `address`; normalize
-    here rather than let a bare bytes object leak into typed storage."""
+    here rather than let a bare bytes object leak into typed storage.
+
+    Also handles a plain hex string ("0x..." or bare hex), confirmed to
+    occur in production: calling create_agreement through genlayer-js's
+    standard writeContract API (as opposed to the genlayer CLI's `addr#...`
+    literal, which constructs a typed Address/bytes value directly) passes
+    the address argument as a hex string. `bytes(value)` on a `str` raises
+    `TypeError: string argument without an encoding` — this crashed a real
+    on-chain transaction during live Studionet testing before this fix. See
+    docs/DEPLOYMENT.md."""
     if isinstance(value, Address):
         return value
+    if isinstance(value, str):
+        text = value[2:] if value.lower().startswith("0x") else value
+        return Address(bytes.fromhex(text))
     return Address(bytes(value))
 
 # --------------------------------------------------------------------------

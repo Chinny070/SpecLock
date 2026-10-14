@@ -181,3 +181,26 @@ def test_unrelated_party_cannot_consent_to_wind_down(direct_vm, direct_deploy, d
     direct_vm.sender = direct_charlie
     with direct_vm.expect_revert():
         contract.cancel_or_expire(agreement_id)
+
+
+def test_provider_as_plain_hex_string_address_is_accepted(direct_vm, direct_deploy, direct_alice, direct_bob):
+    """Regression test for a real production defect found during live
+    Studionet testing: genlayer-js's standard writeContract API passes an
+    address-typed argument as a plain hex string ("0x..."), not as a typed
+    Address/bytes object the way the genlayer CLI's `addr#...` literal does.
+    `_as_address` previously called `bytes(value)` unconditionally, which
+    raises `TypeError: string argument without an encoding` for a `str`
+    input -- this crashed a real on-chain create_agreement transaction
+    before the fix. See docs/DEPLOYMENT.md."""
+    contract = direct_deploy(CONTRACT)
+    direct_vm.sender = direct_alice
+    provider_hex = "0x" + bytes(direct_bob).hex()
+    agreement_id = contract.create_agreement(
+        provider_hex,
+        "api_delivery",
+        "spec",
+        [{"id": "c1", "description": "x", "priority": "required", "evidence_method": "http"}],
+        1,
+    )
+    agreement = contract.get_agreement(agreement_id)
+    assert agreement["provider"].lower() == provider_hex.lower()
