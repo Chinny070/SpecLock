@@ -78,7 +78,17 @@ Real bugs caught and fixed by this test suite during development (not merely pas
 
 ## Gate D — Clean clone
 
-**Not run in this session.** A clean-clone check (clone to a fresh path, install only committed dependencies, rerun the two commands above) was not performed because doing so would require pushing first and re-cloning from GitHub, and this session prioritized getting Gates B/C fully green before spending the remaining time on documentation and the push itself. This is a real gap: run `git clone https://github.com/Chinny070/SpecLock /tmp/speclock-clean && cd /tmp/speclock-clean && pip install genlayer-test genvm-linter && genvm-lint check contracts/speclock.py && gltest tests/direct/ -v` to close it.
+**PASSED.** Ran exactly:
+
+```bash
+git clone https://github.com/Chinny070/SpecLock /tmp/speclock-clean
+cd /tmp/speclock-clean
+pip install -r requirements-dev.txt
+genvm-lint check contracts/speclock.py
+gltest tests/direct/ -v
+```
+
+against commit `a4acab3` (the pushed HEAD at the time of this check). Result: lint `0 errors, 0 warnings`; `40 passed` in Direct Mode, identical to the in-place run above. No untracked files, host-only patches, or missing local assets were needed — everything the clean clone required was already committed. The temporary clone directory was deleted after the check.
 
 ## Gate E — Studionet
 
