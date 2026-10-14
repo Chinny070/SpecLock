@@ -27,7 +27,9 @@ def _setup_frozen_agreement(contract, direct_vm, buyer, provider, url_bound_crit
     direct_vm.sender = provider
     contract.accept_agreement(agreement_id)
     direct_vm.sender = buyer
-    contract.fund_agreement(agreement_id, 1000)
+    direct_vm.value = 1000
+    contract.fund_agreement(agreement_id)
+    direct_vm.value = 0
     contract.freeze_agreement(agreement_id, False)
     return agreement_id
 
@@ -196,7 +198,9 @@ def test_filing_appeal_is_never_time_boxed(direct_vm, direct_deploy, direct_alic
     assert contract.finalize_verdict(agreement_id) is False
 
     direct_vm.sender = direct_alice
+    direct_vm.value = 100
     contract.file_appeal(agreement_id, ["c1"], "the endpoint actually returns valid JSON")
+    direct_vm.value = 0
     assert contract.get_agreement(agreement_id)["phase"] == "APPEALED"
 
     direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": json.dumps({"status": "ok"})})
@@ -225,13 +229,19 @@ def test_appeal_replay_after_resolution_rejected(direct_vm, direct_deploy, direc
     contract.request_evaluation(agreement_id)
 
     direct_vm.sender = direct_alice
+    direct_vm.value = 100
     contract.file_appeal(agreement_id, ["c1"], "disagree")
+    direct_vm.value = 0
     contract.resolve_appeal(agreement_id)
 
     # Agreement is now back in PROVISIONAL_VERDICT; a second appeal round
     # (max_appeal_rounds default = 2, used = 1) is still allowed once, but a
     # third round must fail.
+    direct_vm.value = 100
     contract.file_appeal(agreement_id, ["c1"], "still disagree")
+    direct_vm.value = 0
     contract.resolve_appeal(agreement_id)
     with direct_vm.expect_revert():
+        direct_vm.value = 100
         contract.file_appeal(agreement_id, ["c1"], "one too many")
+        direct_vm.value = 0

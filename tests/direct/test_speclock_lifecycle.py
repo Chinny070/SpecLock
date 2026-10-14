@@ -38,7 +38,9 @@ def test_create_accept_freeze_flow(direct_vm, direct_deploy, direct_alice, direc
     assert contract.get_agreement(agreement_id)["phase"] == "ACCEPTED"
 
     direct_vm.sender = direct_alice
-    contract.fund_agreement(agreement_id, 1000)
+    direct_vm.value = 1000
+    contract.fund_agreement(agreement_id)
+    direct_vm.value = 0
     assert contract.get_agreement(agreement_id)["funded_amount"] == 1000
     assert contract.get_agreement(agreement_id)["phase"] == "FUNDED"
 
@@ -89,8 +91,9 @@ def test_ambiguity_detected_before_freeze_and_blocks_without_ack(direct_vm, dire
     direct_vm.sender = direct_bob
     contract.accept_agreement(agreement_id)
     direct_vm.sender = direct_alice
-    contract.fund_agreement(agreement_id, 100)
-
+    direct_vm.value = 100
+    contract.fund_agreement(agreement_id)
+    direct_vm.value = 0
     with direct_vm.expect_revert():
         contract.freeze_agreement(agreement_id, False)
 
@@ -144,7 +147,9 @@ def test_frozen_wind_down_requires_both_parties_consent(direct_vm, direct_deploy
     direct_vm.sender = direct_bob
     contract.accept_agreement(agreement_id)
     direct_vm.sender = direct_alice
-    contract.fund_agreement(agreement_id, 500)
+    direct_vm.value = 500
+    contract.fund_agreement(agreement_id)
+    direct_vm.value = 0
     contract.freeze_agreement(agreement_id, False)
 
     # Buyer alone cannot force expiry.
@@ -175,7 +180,9 @@ def test_unrelated_party_cannot_consent_to_wind_down(direct_vm, direct_deploy, d
     direct_vm.sender = direct_bob
     contract.accept_agreement(agreement_id)
     direct_vm.sender = direct_alice
-    contract.fund_agreement(agreement_id, 100)
+    direct_vm.value = 100
+    contract.fund_agreement(agreement_id)
+    direct_vm.value = 0
     contract.freeze_agreement(agreement_id, False)
 
     direct_vm.sender = direct_charlie
