@@ -2,7 +2,9 @@
 
 ## Bounds (enforced in `contracts/speclock.py`, exercised in `tests/direct/test_speclock_security.py`)
 
-`MAX_CRITERIA=32`, `MAX_SPEC_CHARS=20000`, `MAX_CRITERION_CHARS=2000`, `MAX_EVIDENCE_URL_CHARS=2000`, `MAX_EVIDENCE_METADATA_CHARS=4000`, `MAX_EVIDENCE_PER_AGREEMENT=64`, `MAX_APPEAL_ROUNDS=2`, `MAX_APPEAL_GROUNDS_CHARS=2000`, `MAX_RESUBMISSIONS=3` (per-agreement cap, configurable lower at creation), `MAX_RATIONALE_CHARS=4000`, `MAX_FETCH_BYTES=200000`, `PAGE_SIZE_MAX=50`, `MAX_CLOCK_ADVANCE_SECONDS` (10 years, bounds the logical-clock griefing surface described in `docs/THREAT_MODEL.md`).
+`MAX_CRITERIA=32`, `MAX_SPEC_CHARS=20000`, `MAX_CRITERION_CHARS=2000`, `MAX_EVIDENCE_URL_CHARS=2000`, `MAX_EVIDENCE_METADATA_CHARS=4000`, `MAX_EVIDENCE_PER_AGREEMENT=64`, `MAX_APPEAL_ROUNDS=2`, `MAX_APPEAL_GROUNDS_CHARS=2000`, `MAX_RESUBMISSIONS=3` (per-agreement cap, configurable lower at creation), `MAX_RATIONALE_CHARS=4000`, `MAX_FETCH_BYTES=200000`, `PAGE_SIZE_MAX=50`.
+
+There is no caller-supplied time/clock bound in this contract at all (a prior revision had one; it was audited, found manipulable, and removed — see `docs/THREAT_MODEL.md` "clock redesign"). Deadline-shaped behavior is now enforced by mutual two-party consent (`finalize_verdict`, `cancel_or_expire`), which cannot be forced by a single sender regardless of any value they might supply.
 
 ## URL / SSRF handling
 

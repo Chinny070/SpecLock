@@ -9,13 +9,14 @@ the judgment. It does NOT exercise the validator disagreement path — that
 requires the integration/consensus gate (tests/integration, Gate E), which
 is documented as BLOCKED_BY_RUNTIME in docs/DEPLOYMENT.md for this
 environment (no funded network access).
+
+No wall-clock time is used anywhere (see contracts/speclock.py time note).
 """
 
 import hashlib
 import json
 
 CONTRACT = "contracts/speclock.py"
-T0 = 1_700_000_000
 
 
 def _setup_frozen_agent_agreement(contract, direct_vm, buyer, provider):
@@ -25,29 +26,26 @@ def _setup_frozen_agent_agreement(contract, direct_vm, buyer, provider):
         "ai_agent_delivery",
         "Agent must summarize the attached document in under 200 words with no fabricated citations.",
         [{"id": "c1", "description": "Summary is under 200 words and cites only sources present in the source document", "priority": "required", "evidence_method": "artifact:c1"}],
-        3600,
-        600,
         1,
-        T0,
     )
     direct_vm.sender = provider
     contract.accept_agreement(agreement_id)
     direct_vm.sender = buyer
     contract.fund_agreement(agreement_id, 800)
-    contract.freeze_agreement(agreement_id, T0 + 1, False)
+    contract.freeze_agreement(agreement_id, False)
     return agreement_id
 
 
-def _submit(contract, direct_vm, submitter, agreement_id, url, now):
+def _submit(contract, direct_vm, submitter, agreement_id, url):
     direct_vm.sender = submitter
     digest = hashlib.sha256(url.encode()).hexdigest()
-    return contract.submit_evidence(agreement_id, url, digest, json.dumps({"criterion_id": "c1"}), now)
+    return contract.submit_evidence(agreement_id, url, digest, json.dumps({"criterion_id": "c1"}))
 
 
 def test_agent_positive_compliant_output_passes(direct_vm, direct_deploy, direct_alice, direct_bob):
     contract = direct_deploy(CONTRACT)
     agreement_id = _setup_frozen_agent_agreement(contract, direct_vm, direct_alice, direct_bob)
-    _submit(contract, direct_vm, direct_bob, agreement_id, "https://artifacts.example.com/summary.txt", T0 + 2)
+    _submit(contract, direct_vm, direct_bob, agreement_id, "https://artifacts.example.com/summary.txt")
 
     direct_vm.mock_llm(
         r".*adjudicating.*",
@@ -55,7 +53,7 @@ def test_agent_positive_compliant_output_passes(direct_vm, direct_deploy, direct
     )
 
     direct_vm.sender = direct_bob
-    evaluation_id = contract.request_evaluation(agreement_id, T0 + 10)
+    evaluation_id = contract.request_evaluation(agreement_id)
     evaluation = contract.get_evaluation(evaluation_id)
     assert evaluation["overall_finding"] == "PASS"
 
@@ -63,7 +61,7 @@ def test_agent_positive_compliant_output_passes(direct_vm, direct_deploy, direct
 def test_agent_negative_hallucinated_citation_fails(direct_vm, direct_deploy, direct_alice, direct_bob):
     contract = direct_deploy(CONTRACT)
     agreement_id = _setup_frozen_agent_agreement(contract, direct_vm, direct_alice, direct_bob)
-    _submit(contract, direct_vm, direct_bob, agreement_id, "https://artifacts.example.com/summary.txt", T0 + 2)
+    _submit(contract, direct_vm, direct_bob, agreement_id, "https://artifacts.example.com/summary.txt")
 
     direct_vm.mock_llm(
         r".*adjudicating.*",
@@ -71,7 +69,7 @@ def test_agent_negative_hallucinated_citation_fails(direct_vm, direct_deploy, di
     )
 
     direct_vm.sender = direct_bob
-    evaluation_id = contract.request_evaluation(agreement_id, T0 + 10)
+    evaluation_id = contract.request_evaluation(agreement_id)
     evaluation = contract.get_evaluation(evaluation_id)
     assert evaluation["overall_finding"] == "FAIL"
     assert evaluation["failure_attribution"] == "DELIVERY"
@@ -80,7 +78,7 @@ def test_agent_negative_hallucinated_citation_fails(direct_vm, direct_deploy, di
 def test_agent_uncertain_malformed_llm_output_is_unverifiable_not_fabricated(direct_vm, direct_deploy, direct_alice, direct_bob):
     contract = direct_deploy(CONTRACT)
     agreement_id = _setup_frozen_agent_agreement(contract, direct_vm, direct_alice, direct_bob)
-    _submit(contract, direct_vm, direct_bob, agreement_id, "https://artifacts.example.com/summary.txt", T0 + 2)
+    _submit(contract, direct_vm, direct_bob, agreement_id, "https://artifacts.example.com/summary.txt")
 
     # LLM returns an invalid enum value -- must not be silently coerced to
     # PASS or FAIL; the contract must raise and the evaluation must land on
@@ -88,7 +86,7 @@ def test_agent_uncertain_malformed_llm_output_is_unverifiable_not_fabricated(dir
     direct_vm.mock_llm(r".*adjudicating.*", json.dumps({"finding": "MAYBE", "sufficiency": "SUFFICIENT", "rationale": "unclear"}))
 
     direct_vm.sender = direct_bob
-    evaluation_id = contract.request_evaluation(agreement_id, T0 + 10)
+    evaluation_id = contract.request_evaluation(agreement_id)
     evaluation = contract.get_evaluation(evaluation_id)
     assert evaluation["overall_finding"] == "UNVERIFIABLE"
 
@@ -97,9 +95,9 @@ def test_agent_missing_artifact_without_independent_evidence_is_unverifiable(dir
     contract = direct_deploy(CONTRACT)
     agreement_id = _setup_frozen_agent_agreement(contract, direct_vm, direct_alice, direct_bob)
     direct_vm.sender = direct_bob
-    contract.submit_evidence(agreement_id, "https://artifacts.example.com/unrelated.txt", hashlib.sha256(b"x").hexdigest(), json.dumps({"criterion_id": "unused"}), T0 + 2)
+    contract.submit_evidence(agreement_id, "https://artifacts.example.com/unrelated.txt", hashlib.sha256(b"x").hexdigest(), json.dumps({"criterion_id": "unused"}))
 
-    evaluation_id = contract.request_evaluation(agreement_id, T0 + 10)
+    evaluation_id = contract.request_evaluation(agreement_id)
     evaluation = contract.get_evaluation(evaluation_id)
     assert evaluation["overall_finding"] == "UNVERIFIABLE"
     assert evaluation["findings"][0]["attribution"] == "EVIDENCE"
@@ -117,14 +115,14 @@ def test_multiple_urls_same_control_not_auto_independent(direct_vm, direct_deplo
     docs/FEATURE_MATRIX.md, capability 19: PARTIAL)."""
     contract = direct_deploy(CONTRACT)
     agreement_id = _setup_frozen_agent_agreement(contract, direct_vm, direct_alice, direct_bob)
-    _submit(contract, direct_vm, direct_bob, agreement_id, "https://artifacts.example.com/summary.txt", T0 + 2)
-    _submit(contract, direct_vm, direct_bob, agreement_id, "https://artifacts.example.com/summary-mirror.txt", T0 + 3)
+    _submit(contract, direct_vm, direct_bob, agreement_id, "https://artifacts.example.com/summary.txt")
+    _submit(contract, direct_vm, direct_bob, agreement_id, "https://artifacts.example.com/summary-mirror.txt")
 
     direct_vm.mock_llm(
         r".*adjudicating.*",
         json.dumps({"finding": "PARTIAL", "sufficiency": "INSUFFICIENT", "rationale": "Both sources share one submitter; cannot corroborate independently."}),
     )
     direct_vm.sender = direct_bob
-    evaluation_id = contract.request_evaluation(agreement_id, T0 + 10)
+    evaluation_id = contract.request_evaluation(agreement_id)
     evaluation = contract.get_evaluation(evaluation_id)
     assert evaluation["findings"][0]["sufficiency"] == "INSUFFICIENT"

@@ -22,6 +22,10 @@ Two nondeterministic rounds exist in SpecLock, one per evaluation profile, both 
 6. **Non-equivalent cases:** `PASS` vs. `FAIL` on the same criterion never passes; an invalid enum value from the LLM raises (`gl.vm.UserError` with `[LLM_ERROR]` prefix) rather than being coerced.
 7. **On failure/disagreement/parsing error:** mapped to `UNVERIFIABLE`/`UNVERIFIABLE`, attribution `UNKNOWN` — never silently defaulted to PASS.
 
+## Appeal resolution precision (fixed defect)
+
+`resolve_appeal`'s UPHELD/REJECTED determination was originally a coarse comparison of the whole evaluation's `overall_finding` against a field (`appeal.resolution_evaluation_id`) that is never populated before the resolving call itself — meaning the comparison always ran against `None` and every first-round appeal was unconditionally `UPHELD`, regardless of whether anything had actually changed. This has been fixed: `resolve_appeal` now captures the challenged evaluation's id before re-evaluating, and compares only the *specifically challenged* criteria's findings between the old and new evaluation. See `tests/direct/test_speclock_consensus.py::test_appeal_rejected_when_challenged_finding_does_not_actually_change` and `::test_appeal_upheld_when_challenged_finding_genuinely_changes`.
+
 ## Error classification used throughout
 
 `[EXPECTED]` (deterministic business-rule violations, from `_require`), `[EXTERNAL]` (reserved for 4xx-class external API errors — not currently raised since the API evaluator classifies by status bucket rather than raising), `[TRANSIENT]` (reserved for 5xx/timeout — currently absorbed into the `reachable=False` branch rather than raised, since the contract's own design treats "unreachable" as an `UNVERIFIABLE` finding rather than a retryable exception), `[LLM_ERROR]` (malformed/invalid-enum LLM output in `_judge_agent_criterion`/`_parse_json_strict`).

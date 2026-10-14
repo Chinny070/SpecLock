@@ -118,19 +118,31 @@ ATTRIBUTION_EVIDENCE = "EVIDENCE"
 ATTRIBUTION_UNKNOWN = "UNKNOWN"
 
 
-MAX_CLOCK_ADVANCE_SECONDS = 10 * 365 * 24 * 3600  # sanity bound on forward clock jumps
-
-# NOTE on time: the installed py-genlayer runner's `gl.message` exposes only
-# contract_address/sender_address/origin_address/value/chain_id — there is
-# no block timestamp field (see docs/GENLAYER_CAPABILITIES.md). Deadlines are
-# therefore driven by a caller-supplied `now` (unix seconds) that every
-# time-gated write call must pass, checked against a contract-wide monotonic
-# logical clock: a call can advance the clock but never move it backward,
-# and a forward jump is capped at MAX_CLOCK_ADVANCE_SECONDS. This is a
-# deliberate, documented trust boundary, not a verified trusted time oracle:
-# a party can still advance the shared clock (not just its own deadlines) by
-# calling any time-gated method, which could prematurely close someone
-# else's appeal window. See docs/THREAT_MODEL.md and docs/GENLAYER_CAPABILITIES.md.
+# NOTE on time (re-audited — see DECISION.md "clock redesign" and
+# docs/GENLAYER_CAPABILITIES.md): the installed py-genlayer runner's
+# `gl.message` exposes no block timestamp, and the raw `message_raw['datetime']`
+# field that the SDK does define is not wired through by this installed
+# `genlayer-test` version's Direct Mode harness for post-deploy calls (its own
+# `get_message_raw()` helper is unreferenced dead code — confirmed by source
+# inspection), so it could not be verified to behave correctly even as a
+# nominal "intended" time source. A prior revision of this contract instead
+# accepted a caller-supplied `now: int` on every time-gated call, bounded only
+# by a monotonic ratchet — that scheme was audited and rejected: a party who
+# is interested in a specific outcome can always pick a `now` that serves
+# them (an early value to keep contesting, or a late value to force
+# closure), and nothing in the contract could independently check it against
+# real elapsed time. Rather than ship an unenforceable deadline, SpecLock now
+# uses NO caller-asserted time anywhere. Every phase transition that used to
+# depend on "has enough time passed" instead depends on either (a) an
+# explicit appeal actually being filed (always available, never time-gated,
+# bounded only by `max_appeal_rounds`), or (b) BOTH parties explicitly and
+# separately consenting to move on (`finalize_verdict` from a provisional
+# verdict, `cancel_or_expire` from FROZEN) — a mutual two-call gate that
+# requires two distinct authorized senders and is not satisfiable by a single
+# self-interested party. `_next_seq()` provides a purely contract-internal,
+# zero-attacker-input monotonic counter used only for audit-trail ordering
+# (it is explicitly NOT wall-clock time and nothing security-relevant is
+# gated on it).
 
 
 def _spec_fingerprint(spec_text: str, criteria_json: str, policy_id: str, policy_version: int) -> str:
@@ -205,11 +217,12 @@ class Agreement:
     resubmissions_used: u256
     max_appeal_rounds: u256
     appeal_rounds_used: u256
-    submission_deadline: u256
-    appeal_window_seconds: u256
-    appeal_window_ends_at: u256
-    created_at: u256
-    frozen_at: u256
+    created_at: u256  # logical sequence number (see _next_seq), NOT wall-clock time
+    frozen_at: u256  # logical sequence number, NOT wall-clock time
+    buyer_ready_to_finalize: bool
+    provider_ready_to_finalize: bool
+    buyer_consents_expire: bool
+    provider_consents_expire: bool
     latest_evaluation_id: str
     latest_appeal_id: str
     settlement_id: str
@@ -227,7 +240,7 @@ class EvidenceReceipt:
     content_digest: str
     metadata_json: str
     status: str  # SUBMITTED | FROZEN | REJECTED
-    submitted_at: u256
+    submitted_at: u256  # logical sequence number, NOT wall-clock time
 
 
 @allow_storage
@@ -242,7 +255,7 @@ class Evaluation:
     overall_finding: str
     failure_attribution: str
     status: str  # PROVISIONAL | FINAL | SUPERSEDED
-    created_at: u256
+    created_at: u256  # logical sequence number, NOT wall-clock time
 
 
 @allow_storage
@@ -253,8 +266,7 @@ class Appeal:
     appellant: Address
     challenged_finding_ids_json: str
     grounds: str
-    filed_at: u256
-    deadline: u256
+    filed_at: u256  # logical sequence number, NOT wall-clock time
     admissible: bool
     resolution: str  # PENDING | FILED_UNADJUDICATED | UPHELD | REJECTED
     resolution_evaluation_id: str
@@ -269,7 +281,7 @@ class Settlement:
     refunded_to_buyer: u256
     retained: u256
     terminal_phase: str
-    settled_at: u256
+    settled_at: u256  # logical sequence number, NOT wall-clock time
     claimed: bool
 
 
@@ -288,7 +300,7 @@ class SpecLock(gl.Contract):
     next_evaluation_seq: u256
     next_appeal_seq: u256
     next_settlement_seq: u256
-    clock: u256
+    seq: u256
 
     agreements: TreeMap[str, Agreement]
     evidence: TreeMap[str, EvidenceReceipt]
@@ -304,7 +316,7 @@ class SpecLock(gl.Contract):
         self.next_evaluation_seq = u256(1)
         self.next_appeal_seq = u256(1)
         self.next_settlement_seq = u256(1)
-        self.clock = u256(0)
+        self.seq = u256(0)
 
     # ---------------------------------------------------------------
     # internal helpers
@@ -314,17 +326,14 @@ class SpecLock(gl.Contract):
         if not condition:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} {message}")
 
-    def _advance_clock(self, now: int) -> int:
-        """Advance the contract-wide monotonic logical clock. See the time
-        note above `MAX_CLOCK_ADVANCE_SECONDS` for the trust boundary this
-        accepts in place of a verified on-chain timestamp."""
-        self._require(now >= 0, "now must be nonnegative")
-        current = int(self.clock)
-        if current > 0:
-            self._require(now - current <= MAX_CLOCK_ADVANCE_SECONDS, "now is implausibly far in the future")
-        new_clock = max(current, now)
-        self.clock = u256(new_clock)
-        return new_clock
+    def _next_seq(self) -> int:
+        """Purely contract-internal monotonic counter for audit-trail
+        ordering. No caller input feeds this value at all — it cannot be
+        manipulated by any party. It is explicitly NOT wall-clock time; see
+        the time note above."""
+        value = int(self.seq) + 1
+        self.seq = u256(value)
+        return value
 
     def _get_agreement(self, agreement_id: str) -> Agreement:
         if agreement_id not in self.agreements:
@@ -381,15 +390,10 @@ class SpecLock(gl.Contract):
         profile: str,
         spec_text: str,
         criteria: list,
-        submission_deadline_offset_seconds: int,
-        appeal_window_seconds: int,
         max_resubmissions: int,
-        now: int,
     ) -> str:
         self._require(profile in PROFILES, "unsupported evaluation profile")
         self._require(1 <= len(spec_text) <= MAX_SPEC_CHARS, "specification length out of bounds")
-        self._require(submission_deadline_offset_seconds > 0, "submission deadline must be in the future")
-        self._require(0 <= appeal_window_seconds <= 30 * 24 * 3600, "appeal window out of bounds")
         self._require(0 <= max_resubmissions <= MAX_RESUBMISSIONS, "max_resubmissions out of bounds")
 
         provider = _as_address(provider)
@@ -401,7 +405,7 @@ class SpecLock(gl.Contract):
 
         agreement_id = str(self.next_agreement_seq)
         self.next_agreement_seq = u256(int(self.next_agreement_seq) + 1)
-        now = u256(self._advance_clock(now))
+        now = u256(self._next_seq())
 
         agreement = Agreement(
             agreement_id=agreement_id,
@@ -422,11 +426,12 @@ class SpecLock(gl.Contract):
             resubmissions_used=u256(0),
             max_appeal_rounds=u256(MAX_APPEAL_ROUNDS),
             appeal_rounds_used=u256(0),
-            submission_deadline=u256(int(now) + submission_deadline_offset_seconds),
-            appeal_window_seconds=u256(appeal_window_seconds),
-            appeal_window_ends_at=u256(0),
             created_at=now,
             frozen_at=u256(0),
+            buyer_ready_to_finalize=False,
+            provider_ready_to_finalize=False,
+            buyer_consents_expire=False,
+            provider_consents_expire=False,
             latest_evaluation_id="",
             latest_appeal_id="",
             settlement_id="",
@@ -462,7 +467,7 @@ class SpecLock(gl.Contract):
         self.agreements[agreement_id] = agreement
 
     @gl.public.write
-    def freeze_agreement(self, agreement_id: str, now: int, acknowledge_ambiguity: bool) -> None:
+    def freeze_agreement(self, agreement_id: str, acknowledge_ambiguity: bool) -> None:
         agreement = self._get_agreement(agreement_id)
         self._require(agreement.phase == PHASE_FUNDED, "agreement must be FUNDED before freeze")
         caller = gl.message.sender_address
@@ -476,25 +481,39 @@ class SpecLock(gl.Contract):
             # flagged a report; a call without it is rejected.
             self._require(acknowledge_ambiguity, "ambiguity report is non-empty; freeze requires explicit acknowledgement")
         agreement.phase = PHASE_FROZEN
-        agreement.frozen_at = u256(self._advance_clock(now))
+        agreement.frozen_at = u256(self._next_seq())
         self.agreements[agreement_id] = agreement
 
     @gl.public.write
-    def cancel_or_expire(self, agreement_id: str, now: int) -> None:
+    def cancel_or_expire(self, agreement_id: str) -> None:
+        """Cancel (pre-funding, single party) or wind down a stalled FROZEN
+        agreement. The FROZEN branch requires BOTH buyer and provider to
+        separately call this method before it takes effect — a deliberate
+        mutual-consent gate replacing the previous (audited and rejected)
+        wall-clock deadline design; see the time note near the top of this
+        file and docs/THREAT_MODEL.md. Neither party can unilaterally force
+        expiry/refund."""
         agreement = self._get_agreement(agreement_id)
         self._require(agreement.phase not in TERMINAL_PHASES, "agreement already terminal")
         caller = gl.message.sender_address
-        now = self._advance_clock(now)
         if agreement.phase in (PHASE_DRAFT, PHASE_ACCEPTED):
             self._require(self._is_party(agreement, caller), "only a party may cancel before funding")
             agreement.phase = PHASE_CANCELLED
-        elif agreement.phase == PHASE_FROZEN and now > int(agreement.submission_deadline):
+            self.agreements[agreement_id] = agreement
+            return
+        self._require(agreement.phase == PHASE_FROZEN, f"agreement is not eligible for cancel/expire in phase {agreement.phase}")
+        self._require(self._is_party(agreement, caller), "only a party may consent to wind-down")
+        if caller == agreement.buyer:
+            self._require(not agreement.buyer_consents_expire, "buyer has already consented to wind-down")
+            agreement.buyer_consents_expire = True
+        else:
+            self._require(not agreement.provider_consents_expire, "provider has already consented to wind-down")
+            agreement.provider_consents_expire = True
+        if agreement.buyer_consents_expire and agreement.provider_consents_expire:
             agreement.phase = PHASE_EXPIRED
             if int(agreement.funded_amount) > 0:
                 self._settle(agreement, released=0, refunded=int(agreement.funded_amount), retained=0, terminal_phase=PHASE_EXPIRED)
                 return
-        else:
-            raise gl.vm.UserError(f"{ERROR_EXPECTED} agreement is not eligible for cancel/expire in phase {agreement.phase}")
         self.agreements[agreement_id] = agreement
 
     # ---------------------------------------------------------------
@@ -502,7 +521,7 @@ class SpecLock(gl.Contract):
     # ---------------------------------------------------------------
 
     @gl.public.write
-    def submit_evidence(self, agreement_id: str, url: str, declared_digest: str, metadata_json: str, now: int) -> str:
+    def submit_evidence(self, agreement_id: str, url: str, declared_digest: str, metadata_json: str) -> str:
         agreement = self._get_agreement(agreement_id)
         self._require(agreement.phase in (PHASE_FROZEN, PHASE_SUBMITTED, PHASE_RESUBMISSION_REQUESTED), "evidence not acceptable in this phase")
         caller = gl.message.sender_address
@@ -530,7 +549,7 @@ class SpecLock(gl.Contract):
             content_digest=declared_digest.lower(),
             metadata_json=metadata_json,
             status="SUBMITTED",
-            submitted_at=u256(self._advance_clock(now)),
+            submitted_at=u256(self._next_seq()),
         )
         self.evidence[receipt_id] = receipt
         receipt_ids.append(receipt_id)
@@ -561,7 +580,7 @@ class SpecLock(gl.Contract):
     # ---------------------------------------------------------------
 
     @gl.public.write
-    def request_evaluation(self, agreement_id: str, now: int) -> str:
+    def request_evaluation(self, agreement_id: str) -> str:
         agreement = self._get_agreement(agreement_id)
         self._require(
             agreement.phase in (PHASE_SUBMITTED, PHASE_RE_EVALUATING),
@@ -569,7 +588,7 @@ class SpecLock(gl.Contract):
         )
         caller = gl.message.sender_address
         self._require(self._is_party(agreement, caller), "only a party may request evaluation")
-        now = self._advance_clock(now)
+        now = self._next_seq()
 
         self._freeze_all_evidence(agreement_id)
         snapshot = self._evidence_snapshot_commitment(agreement_id)
@@ -582,8 +601,10 @@ class SpecLock(gl.Contract):
             result = self._evaluate_agent_profile(criteria, evidence_recs)
 
         findings = result["findings"]
+        ambiguous_ids = {a["criterion_id"] for a in json.loads(agreement.ambiguity_report)}
+        findings = self._apply_specification_attribution(findings, ambiguous_ids)
         overall = self._derive_overall(findings, criteria)
-        attribution = result["attribution"]
+        attribution = self._derive_aggregate_attribution(findings, criteria)
 
         evaluation_id = f"{agreement_id}-eval{self.next_evaluation_seq}"
         self.next_evaluation_seq = u256(int(self.next_evaluation_seq) + 1)
@@ -603,9 +624,47 @@ class SpecLock(gl.Contract):
         self.evaluations[evaluation_id] = evaluation
         agreement.latest_evaluation_id = evaluation_id
         agreement.phase = PHASE_PROVISIONAL_VERDICT
-        agreement.appeal_window_ends_at = u256(now + int(agreement.appeal_window_seconds))
+        # A fresh provisional verdict means any prior round's mutual
+        # finalize-consent no longer applies to this new finding.
+        agreement.buyer_ready_to_finalize = False
+        agreement.provider_ready_to_finalize = False
         self.agreements[agreement_id] = agreement
         return evaluation_id
+
+    def _apply_specification_attribution(self, findings: list, ambiguous_ids: set) -> list:
+        """Capability 22 (failure attribution): a non-PASS finding on a
+        criterion the deterministic compiler already flagged as ambiguous
+        (`_compile_criteria`) is re-tagged SPECIFICATION unless a more
+        specific cause (missing/contradictory evidence, an external
+        dependency failure) was already derived — those are more concrete
+        and should not be overridden by the looser ambiguity signal."""
+        updated = []
+        for f in findings:
+            if (
+                f["finding"] != FINDING_PASS
+                and f["criterion_id"] in ambiguous_ids
+                and f["attribution"] in (ATTRIBUTION_UNKNOWN, ATTRIBUTION_DELIVERY)
+            ):
+                f = dict(f)
+                f["attribution"] = ATTRIBUTION_SPECIFICATION
+            updated.append(f)
+        return updated
+
+    def _derive_aggregate_attribution(self, findings: list, criteria: list) -> str:
+        """Capability 22: derive the evaluation-level failure_attribution
+        from the specific per-criterion attributions already computed by the
+        evaluators, instead of collapsing everything to DELIVERY/UNKNOWN.
+        Priority order favors the most actionable/specific cause first."""
+        required_ids = {c["id"] for c in criteria if c["priority"] == "required"}
+        relevant = [f for f in findings if f["criterion_id"] in required_ids and f["finding"] != FINDING_PASS]
+        if not relevant:
+            return ATTRIBUTION_UNKNOWN
+        priority = (ATTRIBUTION_EVIDENCE, ATTRIBUTION_EXTERNAL, ATTRIBUTION_SPECIFICATION, ATTRIBUTION_DELIVERY)
+        seen = {f["attribution"] for f in relevant}
+        for candidate in priority:
+            if candidate in seen:
+                return candidate
+        return ATTRIBUTION_UNKNOWN
 
     def _derive_overall(self, findings: list, criteria: list) -> str:
         required_ids = {c["id"] for c in criteria if c["priority"] == "required"}
@@ -645,8 +704,7 @@ class SpecLock(gl.Contract):
                     "attribution": attribution,
                 }
             )
-        attribution = ATTRIBUTION_DELIVERY if any(f["finding"] == FINDING_FAIL for f in findings) else ATTRIBUTION_UNKNOWN
-        return {"findings": findings, "attribution": attribution}
+        return {"findings": findings}
 
     def _probe_api_criterion(self, criterion: dict, evidence: "EvidenceReceipt") -> tuple:
         """Reachability vs functional correctness (never collapse a 200 into
@@ -729,8 +787,7 @@ class SpecLock(gl.Contract):
                     "attribution": attribution,
                 }
             )
-        attribution = ATTRIBUTION_DELIVERY if any(f["finding"] == FINDING_FAIL for f in findings) else ATTRIBUTION_UNKNOWN
-        return {"findings": findings, "attribution": attribution}
+        return {"findings": findings}
 
     def _judge_agent_criterion(self, criterion: dict, evidences: list) -> tuple:
         """Capability 5/21: a self-reported trace is never independent proof
@@ -793,11 +850,15 @@ class SpecLock(gl.Contract):
     # ---------------------------------------------------------------
 
     @gl.public.write
-    def file_appeal(self, agreement_id: str, challenged_finding_ids: list, grounds: str, now: int) -> str:
+    def file_appeal(self, agreement_id: str, challenged_finding_ids: list, grounds: str) -> str:
+        """No wall-clock appeal-window check (see the time note near the top
+        of this file): an appeal may be filed any time the agreement is still
+        sitting on a provisional verdict, bounded only by `max_appeal_rounds`.
+        Filing always takes precedence over the other party's finalize
+        consent — see `finalize_verdict`."""
         agreement = self._get_agreement(agreement_id)
         self._require(agreement.phase == PHASE_PROVISIONAL_VERDICT, "appeal only possible on a provisional verdict")
-        now = self._advance_clock(now)
-        self._require(now <= int(agreement.appeal_window_ends_at), "appeal window has closed")
+        now = self._next_seq()
         caller = gl.message.sender_address
         self._require(self._is_party(agreement, caller), "only a party may appeal")
         self._require(int(agreement.appeal_rounds_used) < int(agreement.max_appeal_rounds), "appeal rounds exhausted")
@@ -818,7 +879,6 @@ class SpecLock(gl.Contract):
             challenged_finding_ids_json=json.dumps(sorted(set(challenged_finding_ids))),
             grounds=grounds,
             filed_at=u256(now),
-            deadline=u256(now + int(agreement.appeal_window_seconds)),
             admissible=True,
             resolution="FILED_UNADJUDICATED",
             resolution_evaluation_id="",
@@ -831,20 +891,36 @@ class SpecLock(gl.Contract):
         return appeal_id
 
     @gl.public.write
-    def resolve_appeal(self, agreement_id: str, now: int) -> None:
+    def resolve_appeal(self, agreement_id: str) -> None:
+        """Capability 26/28: resolution compares the SPECIFIC challenged
+        criteria between the challenged evaluation and the fresh
+        re-evaluation, not just the coarse overall_finding (which could stay
+        the same while the challenged criterion's own finding changed, or
+        vice versa with a different required criterion). This fixes a real
+        defect in an earlier revision of this method, which looked up the
+        "old" evaluation via `appeal.resolution_evaluation_id` — a field
+        that is never populated before this very call, so every first-round
+        appeal was unconditionally marked UPHELD regardless of whether
+        anything had actually changed."""
         agreement = self._get_agreement(agreement_id)
         self._require(agreement.phase == PHASE_APPEALED, "no appeal pending resolution")
         appeal = self.appeals[agreement.latest_appeal_id]
         self._require(appeal.resolution == "FILED_UNADJUDICATED", "appeal already resolved")
 
+        challenged_evaluation_id = agreement.latest_evaluation_id
+        challenged_ids = set(json.loads(appeal.challenged_finding_ids_json))
+
         agreement.phase = PHASE_RE_EVALUATING
         self.agreements[agreement_id] = agreement
-        new_evaluation_id = self.request_evaluation(agreement_id, now)
+        new_evaluation_id = self.request_evaluation(agreement_id)
 
-        old_eval = self.evaluations[appeal.resolution_evaluation_id] if appeal.resolution_evaluation_id else None
+        old_eval = self.evaluations[challenged_evaluation_id]
         new_eval = self.evaluations[new_evaluation_id]
+        old_by_id = {f["criterion_id"]: f["finding"] for f in json.loads(old_eval.findings_json)}
+        new_by_id = {f["criterion_id"]: f["finding"] for f in json.loads(new_eval.findings_json)}
+        changed = any(old_by_id.get(cid) != new_by_id.get(cid) for cid in challenged_ids)
         appeal.resolution_evaluation_id = new_evaluation_id
-        appeal.resolution = "UPHELD" if (old_eval is None or old_eval.overall_finding != new_eval.overall_finding) else "REJECTED"
+        appeal.resolution = "UPHELD" if changed else "REJECTED"
         self.appeals[appeal.appeal_id] = appeal
 
     @gl.public.write
@@ -865,18 +941,32 @@ class SpecLock(gl.Contract):
     # ---------------------------------------------------------------
 
     @gl.public.write
-    def finalize_verdict(self, agreement_id: str, now: int) -> None:
+    def finalize_verdict(self, agreement_id: str) -> bool:
+        """Finalize the current provisional verdict. There is no trustworthy
+        way to know "the appeal window has elapsed" (see the time note near
+        the top of this file), so finalization always requires BOTH buyer
+        and provider to separately call this method: the first call just
+        records that caller's consent and returns False (not yet finalized);
+        the second, distinct party's call completes finalization and returns
+        True. A party who disagrees can call `file_appeal` instead of
+        consenting, which immediately moves the agreement to PHASE_APPEALED
+        — `resolve_appeal` always produces a fresh provisional verdict
+        (via `request_evaluation`, which clears both consent flags), so
+        finalizing after an appeal still goes through this same mutual-
+        consent gate on the new verdict, never a bypass."""
         agreement = self._get_agreement(agreement_id)
-        self._require(
-            agreement.phase in (PHASE_PROVISIONAL_VERDICT, PHASE_APPEALED),
-            "nothing to finalize in this phase",
-        )
-        if agreement.phase == PHASE_PROVISIONAL_VERDICT:
-            now = self._advance_clock(now)
-            self._require(now > int(agreement.appeal_window_ends_at), "appeal window still open")
+        self._require(agreement.phase == PHASE_PROVISIONAL_VERDICT, "nothing to finalize in this phase")
+        caller = gl.message.sender_address
+        self._require(self._is_party(agreement, caller), "only a party may consent to finalize")
+        if caller == agreement.buyer:
+            self._require(not agreement.buyer_ready_to_finalize, "buyer has already consented to finalize")
+            agreement.buyer_ready_to_finalize = True
         else:
-            appeal = self.appeals[agreement.latest_appeal_id]
-            self._require(appeal.resolution in ("UPHELD", "REJECTED"), "appeal still pending")
+            self._require(not agreement.provider_ready_to_finalize, "provider has already consented to finalize")
+            agreement.provider_ready_to_finalize = True
+        if not (agreement.buyer_ready_to_finalize and agreement.provider_ready_to_finalize):
+            self.agreements[agreement_id] = agreement
+            return False
 
         evaluation = self.evaluations[agreement.latest_evaluation_id]
         evaluation.status = "FINAL"
@@ -884,6 +974,7 @@ class SpecLock(gl.Contract):
         agreement.phase = PHASE_FINALIZED
         self.agreements[agreement_id] = agreement
         self._update_reputation(agreement.provider, evaluation.overall_finding)
+        return True
 
     def _update_reputation(self, subject: Address, overall_finding: str) -> None:
         key = str(subject)
@@ -910,7 +1001,7 @@ class SpecLock(gl.Contract):
             refunded_to_buyer=u256(refunded),
             retained=u256(retained),
             terminal_phase=terminal_phase,
-            settled_at=self.clock,
+            settled_at=u256(self._next_seq()),
             claimed=True,
         )
         self.settlements[settlement_id] = settlement
@@ -980,6 +1071,10 @@ class SpecLock(gl.Contract):
             "latest_appeal_id": a.latest_appeal_id,
             "settlement_id": a.settlement_id,
             "ambiguity_report": a.ambiguity_report,
+            "buyer_ready_to_finalize": a.buyer_ready_to_finalize,
+            "provider_ready_to_finalize": a.provider_ready_to_finalize,
+            "buyer_consents_expire": a.buyer_consents_expire,
+            "provider_consents_expire": a.provider_consents_expire,
         }
 
     @gl.public.view

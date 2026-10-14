@@ -1,22 +1,25 @@
 # Deployment
 
-## Status: NOT DEPLOYED
+## Status: NOT DEPLOYED (RPC connectivity now verified; funding still unavailable)
 
-No GenLayer network (Studio, testnet, or mainnet) deployment was performed. This section records exactly why and what would be needed, rather than fabricating a deploy transaction, address, or receipt.
+No GenLayer network (Studio, testnet, or mainnet) deployment was performed. This section records exactly what was checked, what was deliberately not done and why, rather than fabricating a deploy transaction, address, or receipt.
 
-## What was checked
+## What was checked (this pass)
 
-- `gh --version` → 2.95.0, authenticated to push to `https://github.com/Chinny070/SpecLock.git` (confirmed by the backup-branch push in this session).
-- `genlayer-test` ships a local simulator (`glsim`) that "executes contracts via the direct mode engine" (its own package docstring) rather than real GenVM/multi-validator consensus — it is not a substitute for Gate E.
-- No GenLayer Studio/testnet/mainnet RPC URL, chain id, or funded signer key was provided by the user or discoverable in this environment. `gltest.config.yaml` was not created in this repository (the brief lists it as optional-if-needed), so `gltest` falls back to its own default `localnet` configuration, which is also not a real network.
+- `gh --version` → 2.95.0, authenticated to push to `https://github.com/Chinny070/SpecLock.git` (confirmed by the backup-branch push and the main-branch pushes in this session).
+- A `genlayer` CLI (npm package, v0.39.2) is installed in this environment, separate from the Python `genlayer-test`/`genvm-linter` tools, with `deploy`, `call`, `write`, `account`, `network`, `appeal`, `appeal-bond`, `finalize`, and `staking` subcommands. Its `appeal`/`appeal-bond`/`finalize` commands operate on **protocol-level** GenVM transaction finality/appeals — a different layer from SpecLock's own **application-level** `file_appeal`/`resolve_appeal`/`finalize_verdict` methods (see the brief's explicit warning not to conflate the two, and `docs/STATE_MACHINE.md` "Protocol finality vs. SpecLock verdict finality").
+- `genlayer network info` confirms the CLI's active network is `studionet` (GenLayer Studio Network, chain id `61999`, RPC `https://studio.genlayer.com/api`, explorer `https://genlayer-explorer.vercel.app`).
+- **RPC connectivity independently verified**, separate from any signer/funding: `curl -s -X POST https://studio.genlayer.com/api -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}'` returned `{"jsonrpc":"2.0","result":"0xf22f","id":1}` — `0xf22f` = `61999` decimal, matching the CLI's reported chain id. The network is reachable from this environment.
+- `genlayer account list` shows a number of pre-existing local keystores on this machine, left over from other, unrelated work (names like `gltest-buyer`, `rc-provider`, etc.) — these were **not created by this session** and were only inspected read-only (`genlayer account show`, which reports balance but never touches key material). Two checked (`default`, `gltest-runner`) both report `0 GEN` and `status: locked`. No private key was requested, displayed, or exported at any point, consistent with the credential-handling rules for this session.
+- `genlayer account create`/`account send` exist, but there is no CLI faucet command; funding a Studio-network account appears to require a separate (likely browser-based) faucet or manual top-up that only the account's owner can authorize. No account was created, unlocked, or funded in this session.
+- `genlayer-test` ships a local simulator (`glsim`) that "executes contracts via the direct mode engine" (its own package docstring) rather than real GenVM/multi-validator consensus — it is not a substitute for Gate E even though it is reachable.
 
-## What would be required to close this gate (concrete next action)
+## What is still missing to close this gate
 
-1. User-supplied (or otherwise provisioned) RPC URL + chain id for GenLayer Studio or a testnet (e.g. `testnet_asimov`/`testnet_bradbury`, both listed as available networks by `gltest`'s own default config output).
-2. A funded signer account private key supplied via environment variable (never pasted into chat — consistent with this session's credential-handling rules) in a `.env` file consumed by `gltest`/the GenLayer CLI.
-3. `genlayer deploy contracts/speclock.py` (or `gltest`'s Studio Mode) against that network, recording: deployer public address, source commit SHA, contract blob hash, deploy tx hash, contract address, receipt, and Explorer URL.
-4. Exercise `create_agreement` → `accept_agreement` → `fund_agreement` → ... → `settle` end to end against the live network for both profiles, with real `gl.nondet.web.get`/`gl.nondet.exec_prompt` calls (no mocks), and capture validator agreement/disagreement evidence.
-5. Only then would capabilities currently marked `IMPLEMENTED_LOCAL_ONLY` in `docs/FEATURE_MATRIX.md` be promotable to `IMPLEMENTED_VERIFIED`.
+1. A funded signer on `studionet` (or a testnet) authorized by its owner for this deployment — not one of the pre-existing unrelated local keystores found above. Funding would need to go through whatever faucet/top-up process GenLayer Studio provides; this session did not attempt it since that decision belongs to whoever owns the funds.
+2. `genlayer deploy contracts/speclock.py --network studionet` (or equivalent) once a funded signer is available, recording: deployer public address, source commit SHA, contract blob hash, deploy tx hash, contract address, receipt, and the Explorer URL (`https://genlayer-explorer.vercel.app`).
+3. Exercise `create_agreement` → `accept_agreement` → `fund_agreement` → ... → `settle` end to end against the live network for both profiles, with real `gl.nondet.web.get`/`gl.nondet.exec_prompt` calls (no mocks), and capture validator agreement/disagreement evidence.
+4. Only then would capabilities currently marked `IMPLEMENTED_LOCAL_ONLY` in `docs/FEATURE_MATRIX.md` be promotable to `IMPLEMENTED_VERIFIED`.
 
 ## Funds / escrow
 

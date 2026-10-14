@@ -9,7 +9,7 @@
 
 ```
 ============================= test session starts =============================
-collected 32 items
+collected 40 items
 
 tests/direct/test_speclock_agent.py::test_agent_positive_compliant_output_passes PASSED
 tests/direct/test_speclock_agent.py::test_agent_negative_hallucinated_citation_fails PASSED
@@ -23,8 +23,15 @@ tests/direct/test_speclock_api.py::test_missing_evidence_for_criterion_is_unveri
 tests/direct/test_speclock_api.py::test_evidence_url_blocked_schemes_and_hosts_rejected PASSED
 tests/direct/test_speclock_api.py::test_evidence_freezes_and_snapshot_is_immutable_after_evaluation PASSED
 tests/direct/test_speclock_api.py::test_settlement_conservation_on_pass PASSED
-tests/direct/test_speclock_api.py::test_appeal_window_must_be_open_to_file_and_closed_to_finalize PASSED
+tests/direct/test_speclock_api.py::test_finalize_requires_both_distinct_parties_not_one_caller_twice PASSED
+tests/direct/test_speclock_api.py::test_filing_appeal_is_never_time_boxed PASSED
 tests/direct/test_speclock_api.py::test_appeal_replay_after_resolution_rejected PASSED
+tests/direct/test_speclock_consensus.py::test_aggregate_attribution_prefers_evidence_over_delivery PASSED
+tests/direct/test_speclock_consensus.py::test_specification_attribution_for_ambiguous_criterion PASSED
+tests/direct/test_speclock_consensus.py::test_partial_settlement_splits_funds_by_passed_ratio PASSED
+tests/direct/test_speclock_consensus.py::test_appeal_rejected_when_challenged_finding_does_not_actually_change PASSED
+tests/direct/test_speclock_consensus.py::test_appeal_upheld_when_challenged_finding_genuinely_changes PASSED
+tests/direct/test_speclock_consensus.py::test_deterministic_replay_of_settlement_math PASSED
 tests/direct/test_speclock_lifecycle.py::test_create_accept_freeze_flow PASSED
 tests/direct/test_speclock_lifecycle.py::test_wrong_actor_cannot_accept PASSED
 tests/direct/test_speclock_lifecycle.py::test_only_buyer_can_create_mismatched_provider_rejected PASSED
@@ -32,8 +39,8 @@ tests/direct/test_speclock_lifecycle.py::test_ambiguity_detected_before_freeze_a
 tests/direct/test_speclock_lifecycle.py::test_duplicate_criterion_ids_rejected PASSED
 tests/direct/test_speclock_lifecycle.py::test_unauthorized_or_out_of_order_transition_does_not_mutate_state PASSED
 tests/direct/test_speclock_lifecycle.py::test_cancel_before_funding_by_party PASSED
-tests/direct/test_speclock_lifecycle.py::test_expired_after_deadline_refunds_in_full PASSED
-tests/direct/test_speclock_lifecycle.py::test_clock_cannot_move_backward_or_jump_implausibly_far PASSED
+tests/direct/test_speclock_lifecycle.py::test_frozen_wind_down_requires_both_parties_consent PASSED
+tests/direct/test_speclock_lifecycle.py::test_unrelated_party_cannot_consent_to_wind_down PASSED
 tests/direct/test_speclock_security.py::test_too_many_criteria_rejected PASSED
 tests/direct/test_speclock_security.py::test_oversized_spec_text_rejected PASSED
 tests/direct/test_speclock_security.py::test_malformed_metadata_json_rejected PASSED
@@ -43,16 +50,19 @@ tests/direct/test_speclock_security.py::test_evidence_cap_enforced PASSED
 tests/direct/test_speclock_security.py::test_unverifiable_overall_recovers_funds_without_awarding_either_party PASSED
 tests/direct/test_speclock_security.py::test_reputation_only_updates_on_finalized_outcome PASSED
 tests/direct/test_speclock_security.py::test_resubmission_budget_enforced PASSED
+tests/direct/test_speclock_security.py::test_finalize_consent_cannot_be_forced_by_a_single_malicious_party PASSED
 
-============================= 32 passed in 7.45s ==============================
+============================= 40 passed in 6.45s ==============================
 ```
 
-32/32 passed, 0 skipped, 0 failed. Order-independence was not separately verified with `-p no:randomly` (no such plugin installed) but tests do not share module-level mutable state — each test calls `direct_deploy` for a fresh contract instance.
+40/40 passed, 0 skipped, 0 failed. Order-independence was not separately verified with `-p no:randomly` (no such plugin installed) but tests do not share module-level mutable state — each test calls `direct_deploy` for a fresh contract instance.
 
-Three real bugs were caught and fixed by this test suite during development (not merely passed on the first attempt):
+Real bugs caught and fixed by this test suite during development (not merely passed on the first attempt), across the initial build and a subsequent security-audit pass:
 1. `gl.message.sender_account` does not exist (`AttributeError`) — corrected to `gl.message.sender_address` throughout.
 2. `recover_inconclusive` originally retained the already-retained amount again instead of refunding it (conservation math was self-consistent but the refund was silently zero) — caught by `test_unverifiable_overall_recovers_funds_without_awarding_either_party`.
 3. Address-typed parameters arriving as raw `bytes` after the Direct Mode calldata round-trip — fixed with `_as_address()` coercion.
+4. **(Security-audit pass)** A caller-supplied `now` timestamp scheme for deadlines/appeal-windows was manipulable by any self-interested party in either direction (force early closure or indefinite contestability) — audited, rejected, and replaced with mutual two-party consent gates and no asserted time at all. See `DECISION.md` item 1 and `docs/THREAT_MODEL.md` "clock redesign".
+5. **(Security-audit pass)** `resolve_appeal` compared against a field (`appeal.resolution_evaluation_id`) never populated before that same call, so `old_eval` was always `None` and every first-round appeal was unconditionally resolved `UPHELD` regardless of outcome — caught by writing `test_appeal_rejected_when_challenged_finding_does_not_actually_change`, which failed against the original logic before the fix.
 
 ## Gate C — GenVM linter (reproducible: `genvm-lint check contracts/speclock.py` and `genvm-lint validate contracts/speclock.py`)
 
