@@ -29,7 +29,9 @@ def _two_criteria_agreement(contract, direct_vm, buyer, provider):
     direct_vm.sender = provider
     contract.accept_agreement(agreement_id)
     direct_vm.sender = buyer
+    direct_vm.value = 1000
     contract.fund_agreement(agreement_id, 1000)
+    direct_vm.value = 0
     contract.freeze_agreement(agreement_id, False)
     return agreement_id
 
@@ -71,7 +73,9 @@ def test_specification_attribution_for_ambiguous_criterion(direct_vm, direct_dep
     direct_vm.sender = direct_bob
     contract.accept_agreement(agreement_id)
     direct_vm.sender = direct_alice
+    direct_vm.value = 100
     contract.fund_agreement(agreement_id, 100)
+    direct_vm.value = 0
     contract.freeze_agreement(agreement_id, True)
 
     direct_vm.sender = direct_bob
@@ -116,7 +120,9 @@ def test_partial_settlement_splits_funds_by_passed_ratio(direct_vm, direct_deplo
     direct_vm.sender = direct_bob
     contract.accept_agreement(agreement_id2)
     direct_vm.sender = direct_alice
+    direct_vm.value = 1000
     contract.fund_agreement(agreement_id2, 1000)
+    direct_vm.value = 0
     contract.freeze_agreement(agreement_id2, False)
     direct_vm.sender = direct_bob
     contract.submit_evidence(agreement_id2, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
@@ -162,7 +168,9 @@ def test_appeal_rejected_when_challenged_finding_does_not_actually_change(direct
     contract.request_evaluation(agreement_id)
 
     direct_vm.sender = direct_alice
+    direct_vm.value = 100
     contract.file_appeal(agreement_id, ["c1"], "I think c1 actually passed")
+    direct_vm.value = 0
     # Same mock, unchanged -- c1 will fail again on re-evaluation too.
     contract.resolve_appeal(agreement_id)
     appeal = contract.get_appeal(contract.get_agreement(agreement_id)["latest_appeal_id"])
@@ -181,7 +189,9 @@ def test_appeal_upheld_when_challenged_finding_genuinely_changes(direct_vm, dire
     contract.request_evaluation(agreement_id)
 
     direct_vm.sender = direct_alice
+    direct_vm.value = 100
     contract.file_appeal(agreement_id, ["c1"], "the endpoint now returns valid JSON")
+    direct_vm.value = 0
     # The endpoint's response genuinely changes before re-evaluation. Mocks
     # match in registration order, so clear and re-register both rather
     # than relying on the new mock_web call shadowing the old one.

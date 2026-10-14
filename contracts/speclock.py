@@ -12,22 +12,23 @@ See docs/PROTOCOL.md, docs/STATE_MACHINE.md, docs/CONSENSUS.md,
 docs/SECURITY.md and docs/FEATURE_MATRIX.md for the full design record and
 the honest status of every numbered capability from the project brief.
 
-Funding/escrow status: `fund_agreement` records an integer `funded_amount`
-as contract storage bookkeeping; no native-value transfer, payable method,
-or balance check against `gl.message.value` is live here. A real-escrow
-design (`@gl.public.write.payable`, paying out via
-`gl.get_contract_at(recipient).emit_transfer(...)`) was built and deployed
-for live testing: incoming deposits genuinely worked (a real buyer wallet
-balance dropped by exactly the sent amount), but the matching payout to a
-plain wallet (EOA) recipient failed with `"Contract ... not found"` and
-`value_credited: false` — this GenVM runtime's `emit_transfer` appears to
-require the recipient to be a deployed contract, not an ordinary wallet
-address. That would let real deposits succeed while payouts silently and
-permanently fail, a fund-lock hazard, so the design was reverted back to
-bookkeeping-only. Full evidence in `docs/DEPLOYMENT.md` and `DECISION.md`
-item 8. Appeal bonds were reverted for the identical reason — appeal spam
-is bounded only by the deterministic `max_appeal_rounds` counter, not an
-economic bond, until this runtime limitation is resolved.
+Funding/escrow status: `fund_agreement` is `@gl.public.write.payable` and
+requires the buyer to send `gl.message.value` matching the declared
+`amount`. A first real-escrow attempt paid out via
+`gl.get_contract_at(recipient).emit_transfer(...)` and failed live
+(`"Contract ... not found"`, `value_credited: false`) — that primitive
+addresses another GenLayer *intelligent contract*, not a plain wallet
+(EOA), which is exactly what a buyer/provider normally is (see
+`DECISION.md` item 8 for that investigation). The fix is a different,
+EVM-layer primitive: `gl.evm.contract_interface` builds a proxy
+(`_EthAccount` below) whose `.emit_transfer(value=...)` emits a native
+`EthSend` to a chain-layer address rather than attempting to message a
+GenVM contract. Settlement uses a pull-payment pattern — `_settle` only
+credits a `claimable` balance (never calls `emit_transfer` itself, and
+never from inside a nondeterministic block); the party later calls
+`withdraw()` themselves to trigger the real transfer. This pattern, the
+exact root cause of the earlier failure, and its live verification are
+recorded in `DECISION.md` item 10 and `docs/DEPLOYMENT.md`.
 """
 
 import hashlib
@@ -36,6 +37,26 @@ import re
 from dataclasses import dataclass, field
 
 from genlayer import *
+
+
+@gl.evm.contract_interface
+class _EthAccount:
+    """EVM-layer value-transfer interface for paying a plain wallet (EOA).
+    `gl.get_contract_at(address)` addresses another GenLayer intelligent
+    contract and fails against an ordinary wallet address ("Contract ...
+    not found" — see the module docstring and DECISION.md item 8).
+    `gl.evm.contract_interface` builds a proxy whose `.emit_transfer(
+    value=u256(...))` instead emits a native EthSend with empty calldata to
+    the chain-layer address, which is the correct path for an EOA. The
+    external message always executes on finalization regardless of any
+    `on=` argument, so it is never called from inside a nondeterministic
+    block — only from a plain deterministic `@gl.public.write` method."""
+
+    class View:
+        pass
+
+    class Write:
+        pass
 
 
 def _as_address(value) -> Address:
@@ -333,6 +354,9 @@ class SpecLock(gl.Contract):
     appeals: TreeMap[str, Appeal]
     settlements: TreeMap[str, Settlement]
     reputation: TreeMap[str, ReputationCounter]  # address str -> counter
+    claimable: TreeMap[str, u256]  # address str -> real native atto credited, awaiting withdraw()
+    value_in_total: u256   # lifetime real native value received via payable calls
+    value_out_total: u256  # lifetime real native value actually paid out via withdraw()
 
     def __init__(self) -> None:
         self.next_agreement_seq = u256(1)
@@ -341,6 +365,8 @@ class SpecLock(gl.Contract):
         self.next_appeal_seq = u256(1)
         self.next_settlement_seq = u256(1)
         self.seq = u256(0)
+        self.value_in_total = u256(0)
+        self.value_out_total = u256(0)
 
     # ---------------------------------------------------------------
     # internal helpers
@@ -349,6 +375,16 @@ class SpecLock(gl.Contract):
     def _require(self, condition: bool, message: str) -> None:
         if not condition:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} {message}")
+
+    def _credit(self, address: Address, atto: int) -> None:
+        """Pull-payment bookkeeping only — never calls emit_transfer here.
+        The credited party later calls `withdraw()` themselves to trigger
+        the real transfer (see the module docstring and `withdraw`)."""
+        if int(atto) <= 0:
+            return
+        key = str(address)
+        current = int(self.claimable[key]) if key in self.claimable else 0
+        self.claimable[key] = u256(current + int(atto))
 
     def _next_seq(self) -> int:
         """Purely contract-internal monotonic counter for audit-trail
@@ -474,27 +510,26 @@ class SpecLock(gl.Contract):
         agreement.phase = PHASE_ACCEPTED
         self.agreements[agreement_id] = agreement
 
-    @gl.public.write
+    @gl.public.write.payable
     def fund_agreement(self, agreement_id: str, amount: int) -> None:
-        """Bookkeeping funding only — reverted from a real-escrow design
-        after live testing. A `@gl.public.write.payable` version was built
-        and deployed (incoming deposits via `gl.message.value` worked: a
-        real buyer balance dropped by exactly the sent amount), but the
-        matching payout via `gl.get_contract_at(recipient).emit_transfer(...)`
-        failed against a plain wallet (EOA) recipient with a
-        `"Contract ... not found"` error and `value_credited: false` — this
-        GenVM runtime's `emit_transfer` appears to require the recipient to
-        be a deployed contract, not an ordinary wallet address, which is
-        exactly what a buyer/provider normally is. Shipping that design
-        would let real deposits succeed while payouts silently and
-        permanently fail, a fund-lock hazard, so it was reverted. Full
-        evidence in docs/DEPLOYMENT.md and DECISION.md item 8; do not
-        reintroduce native-value custody here until that is resolved."""
+        """Real native-value escrow. The buyer must send `gl.message.value`
+        equal to the declared `amount` — the amount is still an explicit
+        parameter (rather than inferred solely from the sent value) so a
+        mismatched transfer fails loudly instead of silently funding the
+        agreement for whatever happened to arrive. The sent value is
+        credited to this contract's own balance by the protocol;
+        `_settle`/`recover_inconclusive` later credit it to the relevant
+        party's `claimable` balance, and that party calls `withdraw()`
+        themselves to receive the real native-value payout. See the module
+        docstring, `_settle`, and `withdraw`."""
         agreement = self._get_agreement(agreement_id)
         self._require(agreement.phase == PHASE_ACCEPTED, "agreement must be ACCEPTED before funding")
         caller = gl.message.sender_address
         self._require(caller == agreement.buyer, "only the buyer can fund")
         self._require(amount > 0, "funded amount must be positive")
+        sent = int(gl.message.value)
+        self._require(sent == amount, f"sent value ({sent}) must match declared amount ({amount})")
+        self.value_in_total = u256(int(self.value_in_total) + sent)
         agreement.funded_amount = u256(amount)
         agreement.phase = PHASE_FUNDED
         self.agreements[agreement_id] = agreement
@@ -921,7 +956,7 @@ class SpecLock(gl.Contract):
     # Capability 9/25/26/29: application-level appeal
     # ---------------------------------------------------------------
 
-    @gl.public.write
+    @gl.public.write.payable
     def file_appeal(self, agreement_id: str, challenged_finding_ids: list, grounds: str) -> str:
         """No wall-clock appeal-window check (see the time note near the top
         of this file): an appeal may be filed any time the agreement is still
@@ -929,15 +964,12 @@ class SpecLock(gl.Contract):
         Filing always takes precedence over the other party's finalize
         consent — see `finalize_verdict`.
 
-        Capability 29: a real-value appeal bond (paid via
-        `gl.public.write.payable` and refunded/forfeited via
-        `gl.get_contract_at(...).emit_transfer(...)`) was built and tested
-        live, then reverted along with native escrow (see
-        `fund_agreement`'s docstring) once live testing showed
-        `emit_transfer` fails against a plain wallet recipient. Appeal spam
-        is bounded here only by the deterministic `max_appeal_rounds`
-        counter, not an economic bond, until that runtime limitation is
-        resolved."""
+        Capability 29: a real-value appeal bond of `max(1, funded_amount //
+        10)` must be sent with this call — a real cost to filing a
+        frivolous appeal, not just a round counter. `resolve_appeal` credits
+        the bond back to the appellant via `claimable` if the appeal is
+        `UPHELD`, or to the other party if `REJECTED`; the credited party
+        calls `withdraw()` to receive it (see the module docstring)."""
         agreement = self._get_agreement(agreement_id)
         self._require(agreement.phase == PHASE_PROVISIONAL_VERDICT, "appeal only possible on a provisional verdict")
         now = self._next_seq()
@@ -952,6 +984,11 @@ class SpecLock(gl.Contract):
         for cid in challenged_finding_ids:
             self._require(cid in findings, f"unknown challenged criterion id: {cid}")
 
+        required_bond = max(1, int(agreement.funded_amount) // 10)
+        sent_value = int(gl.message.value)
+        self._require(sent_value == required_bond, f"appeal bond must be exactly {required_bond}")
+        self.value_in_total = u256(int(self.value_in_total) + sent_value)
+
         appeal_id = f"{agreement_id}-ap{self.next_appeal_seq}"
         self.next_appeal_seq = u256(int(self.next_appeal_seq) + 1)
         appeal = Appeal(
@@ -964,8 +1001,8 @@ class SpecLock(gl.Contract):
             admissible=True,
             resolution="FILED_UNADJUDICATED",
             resolution_evaluation_id="",
-            bond_amount=u256(0),  # reverted feature; see file_appeal's docstring
-            bond_settled=True,
+            bond_amount=u256(required_bond),
+            bond_settled=False,
         )
         self.appeals[appeal_id] = appeal
         agreement.latest_appeal_id = appeal_id
@@ -1006,8 +1043,20 @@ class SpecLock(gl.Contract):
         appeal.resolution_evaluation_id = new_evaluation_id
         appeal.resolution = "UPHELD" if changed else "REJECTED"
         self.appeals[appeal.appeal_id] = appeal
-        # No real-value bond settlement — reverted along with the appeal
-        # bond and native escrow (see file_appeal's docstring).
+
+        # Capability 29: credit the real-value bond via the same pull-payment
+        # pattern as _settle — never emit_transfer directly here. UPHELD
+        # returns the bond to the appellant; REJECTED pays it to the other
+        # party, a real cost for a frivolous appeal.
+        bond = int(appeal.bond_amount)
+        if bond > 0 and not appeal.bond_settled:
+            appeal.bond_settled = True
+            self.appeals[appeal.appeal_id] = appeal
+            if appeal.resolution == "UPHELD":
+                self._credit(appeal.appellant, bond)
+            else:
+                other_party = agreement.provider if appeal.appellant == agreement.buyer else agreement.buyer
+                self._credit(other_party, bond)
 
     @gl.public.write
     def request_resubmission(self, agreement_id: str) -> None:
@@ -1097,10 +1146,13 @@ class SpecLock(gl.Contract):
         agreement.settlement_id = settlement_id
         agreement.phase = terminal_phase
         self.agreements[agreement.agreement_id] = agreement
-        # No real native-value transfer here — see fund_agreement's
-        # docstring and docs/DEPLOYMENT.md: emit_transfer to a plain wallet
-        # (EOA) recipient failed live testing with "Contract ... not found".
-        # These amounts are bookkeeping only until that is resolved.
+        # Pull-payment: credit claimable balances only, never call
+        # emit_transfer from here (this runs inside deterministic code, but
+        # keeping the real transfer in a separate caller-triggered method
+        # keeps the pattern identical everywhere real value moves — see the
+        # module docstring and `withdraw`).
+        self._credit(agreement.provider, released)
+        self._credit(agreement.buyer, refunded)
 
     @gl.public.write
     def settle(self, agreement_id: str) -> str:
@@ -1137,9 +1189,34 @@ class SpecLock(gl.Contract):
         self._settle(agreement, released=0, refunded=funded, retained=0, terminal_phase=PHASE_REFUNDED)
         return agreement.settlement_id
 
+    @gl.public.write
+    def withdraw(self) -> int:
+        """Pull model: zeroes the caller's claimable balance BEFORE
+        scheduling the transfer (checks-effects-interactions), then pays it
+        out via the EVM-layer interface (`_EthAccount(...).emit_transfer`) —
+        the correct path for a plain wallet (EOA) recipient, unlike
+        `gl.get_contract_at(...)` (see the module docstring and
+        `DECISION.md` item 8/10 for why). This call is a plain
+        deterministic `@gl.public.write` method, never invoked from inside a
+        nondeterministic block, so the external transfer always executes on
+        protocol finalization with no consensus-equivalence concerns."""
+        caller = gl.message.sender_address
+        key = str(caller)
+        amount = int(self.claimable[key]) if key in self.claimable else 0
+        self._require(amount > 0, "nothing to withdraw")
+        self.claimable[key] = u256(0)
+        self.value_out_total = u256(int(self.value_out_total) + amount)
+        _EthAccount(caller).emit_transfer(value=u256(amount))
+        return amount
+
     # ---------------------------------------------------------------
     # Views
     # ---------------------------------------------------------------
+
+    @gl.public.view
+    def get_claimable(self, address: str) -> int:
+        key = str(_as_address(address))
+        return int(self.claimable[key]) if key in self.claimable else 0
 
     @gl.public.view
     def get_agreement(self, agreement_id: str) -> dict:

@@ -42,7 +42,9 @@ def test_malformed_metadata_json_rejected(direct_vm, direct_deploy, direct_alice
     direct_vm.sender = direct_bob
     contract.accept_agreement(agreement_id)
     direct_vm.sender = direct_alice
+    direct_vm.value = 10
     contract.fund_agreement(agreement_id, 10)
+    direct_vm.value = 0
     contract.freeze_agreement(agreement_id, False)
 
     direct_vm.sender = direct_bob
@@ -84,7 +86,9 @@ def test_evidence_cap_enforced(direct_vm, direct_deploy, direct_alice, direct_bo
     direct_vm.sender = direct_bob
     contract.accept_agreement(agreement_id)
     direct_vm.sender = direct_alice
+    direct_vm.value = 10
     contract.fund_agreement(agreement_id, 10)
+    direct_vm.value = 0
     contract.freeze_agreement(agreement_id, False)
 
     direct_vm.sender = direct_bob
@@ -106,7 +110,9 @@ def test_unverifiable_overall_recovers_funds_without_awarding_either_party(direc
     direct_vm.sender = direct_bob
     contract.accept_agreement(agreement_id)
     direct_vm.sender = direct_alice
+    direct_vm.value = 777
     contract.fund_agreement(agreement_id, 777)
+    direct_vm.value = 0
     contract.freeze_agreement(agreement_id, False)
 
     direct_vm.sender = direct_bob
@@ -150,7 +156,9 @@ def test_reputation_only_updates_on_finalized_outcome(direct_vm, direct_deploy, 
     direct_vm.sender = direct_bob
     contract.accept_agreement(agreement_id)
     direct_vm.sender = direct_alice
+    direct_vm.value = 100
     contract.fund_agreement(agreement_id, 100)
+    direct_vm.value = 0
     contract.freeze_agreement(agreement_id, False)
 
     direct_vm.sender = direct_bob
@@ -186,7 +194,9 @@ def test_resubmission_budget_enforced(direct_vm, direct_deploy, direct_alice, di
     direct_vm.sender = direct_bob
     contract.accept_agreement(agreement_id)
     direct_vm.sender = direct_alice
+    direct_vm.value = 100
     contract.fund_agreement(agreement_id, 100)
+    direct_vm.value = 0
     contract.freeze_agreement(agreement_id, False)
 
     direct_vm.sender = direct_bob
@@ -217,7 +227,9 @@ def test_finalize_consent_cannot_be_forced_by_a_single_malicious_party(direct_vm
     direct_vm.sender = direct_bob
     contract.accept_agreement(agreement_id)
     direct_vm.sender = direct_alice
+    direct_vm.value = 100
     contract.fund_agreement(agreement_id, 100)
+    direct_vm.value = 0
     contract.freeze_agreement(agreement_id, False)
     direct_vm.sender = direct_bob
     digest = hashlib.sha256(b"x").hexdigest()
@@ -249,7 +261,9 @@ def test_check_verdict_consistency_reports_changed_criteria_across_rounds(direct
     direct_vm.sender = direct_bob
     contract.accept_agreement(agreement_id)
     direct_vm.sender = direct_alice
+    direct_vm.value = 1000
     contract.fund_agreement(agreement_id, 1000)
+    direct_vm.value = 0
     contract.freeze_agreement(agreement_id, False)
     direct_vm.sender = direct_bob
     digest = hashlib.sha256(b"x").hexdigest()
@@ -262,7 +276,9 @@ def test_check_verdict_consistency_reports_changed_criteria_across_rounds(direct
     assert before["any_contradiction_detected"] is False
 
     direct_vm.sender = direct_alice
+    direct_vm.value = 100
     contract.file_appeal(agreement_id, ["c1"], "disagree")
+    direct_vm.value = 0
     direct_vm.clear_mocks()
     direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": json.dumps({"ok": True})})
     contract.resolve_appeal(agreement_id)
@@ -272,3 +288,183 @@ def test_check_verdict_consistency_reports_changed_criteria_across_rounds(direct
     assert after["any_contradiction_detected"] is True
     assert "c1" in after["changed_criteria"]
     assert [entry["finding"] for entry in after["findings_by_criterion"]["c1"]] == ["FAIL", "PASS"]
+
+
+# ---------------------------------------------------------------------------
+# Native-value escrow: fund_agreement is payable, settle()/recover_inconclusive
+# credit a pull-payment `claimable` balance, and withdraw() pays it out via
+# the EVM-layer `_EthAccount` proxy. Direct Mode cannot move real GEN
+# (emit_transfer is a protocol no-op here), so these tests assert the
+# deterministic accounting and call-path behavior exactly as agentcourt's
+# `tests/direct/test_native_escrow.py` does for the identical pattern; real
+# end-to-end value movement is a Studionet concern (see docs/DEPLOYMENT.md).
+# ---------------------------------------------------------------------------
+
+def _setup_funded_api_agreement(contract, direct_vm, buyer, provider, amount=1000):
+    direct_vm.sender = buyer
+    agreement_id = contract.create_agreement(
+        provider, "api_delivery", "spec",
+        [{"id": "c1", "description": "endpoint responds", "priority": "required", "evidence_method": "http:c1"}],
+        1,
+    )
+    direct_vm.sender = provider
+    contract.accept_agreement(agreement_id)
+    direct_vm.sender = buyer
+    direct_vm.value = amount
+    contract.fund_agreement(agreement_id, amount)
+    direct_vm.value = 0
+    contract.freeze_agreement(agreement_id, False)
+    return agreement_id
+
+
+def test_fund_agreement_requires_sent_value_to_match_declared_amount(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy(CONTRACT)
+    direct_vm.sender = direct_alice
+    agreement_id = contract.create_agreement(
+        direct_bob, "api_delivery", "spec",
+        [{"id": "c1", "description": "endpoint responds", "priority": "required", "evidence_method": "http:c1"}],
+        1,
+    )
+    direct_vm.sender = direct_bob
+    contract.accept_agreement(agreement_id)
+    direct_vm.sender = direct_alice
+    direct_vm.value = 1  # claims 1000 but sends only 1
+    with direct_vm.expect_revert():
+        contract.fund_agreement(agreement_id, 1000)
+    direct_vm.value = 0
+    assert contract.get_agreement(agreement_id)["phase"] == "ACCEPTED"
+
+
+def test_settle_on_pass_credits_provider_claimable_not_buyer(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy(CONTRACT)
+    from genlayer.py.types import Address
+    agreement_id = _setup_funded_api_agreement(contract, direct_vm, direct_alice, direct_bob, amount=1000)
+    direct_vm.sender = direct_bob
+    digest = hashlib.sha256(b"x").hexdigest()
+    contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
+    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": json.dumps({"ok": True})})
+    contract.request_evaluation(agreement_id)
+    direct_vm.sender = direct_alice
+    assert contract.finalize_verdict(agreement_id) is False
+    direct_vm.sender = direct_bob
+    assert contract.finalize_verdict(agreement_id) is True
+    contract.settle(agreement_id)
+
+    assert contract.get_claimable(str(Address(bytes(direct_bob)))) == 1000
+    assert contract.get_claimable(str(Address(bytes(direct_alice)))) == 0
+
+
+def test_withdraw_zeroes_claimable_and_returns_amount(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy(CONTRACT)
+    from genlayer.py.types import Address
+    agreement_id = _setup_funded_api_agreement(contract, direct_vm, direct_alice, direct_bob, amount=1000)
+    direct_vm.sender = direct_bob
+    digest = hashlib.sha256(b"x").hexdigest()
+    contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
+    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": json.dumps({"ok": True})})
+    contract.request_evaluation(agreement_id)
+    direct_vm.sender = direct_alice
+    assert contract.finalize_verdict(agreement_id) is False
+    direct_vm.sender = direct_bob
+    assert contract.finalize_verdict(agreement_id) is True
+    contract.settle(agreement_id)
+
+    withdrawn = contract.withdraw()
+    assert withdrawn == 1000
+    assert contract.get_claimable(str(Address(bytes(direct_bob)))) == 0
+
+    with direct_vm.expect_revert():
+        contract.withdraw()
+
+
+def test_withdraw_with_nothing_claimable_reverts(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy(CONTRACT)
+    direct_vm.sender = direct_alice
+    with direct_vm.expect_revert():
+        contract.withdraw()
+
+
+def test_recover_inconclusive_credits_buyer_claimable(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy(CONTRACT)
+    from genlayer.py.types import Address
+    agreement_id = _setup_funded_api_agreement(contract, direct_vm, direct_alice, direct_bob, amount=500)
+    direct_vm.sender = direct_bob
+    digest = hashlib.sha256(b"x").hexdigest()
+    contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
+    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 503, "body": ""})
+    contract.request_evaluation(agreement_id)
+    direct_vm.sender = direct_alice
+    assert contract.finalize_verdict(agreement_id) is False
+    direct_vm.sender = direct_bob
+    assert contract.finalize_verdict(agreement_id) is True
+    contract.settle(agreement_id)
+    assert contract.get_agreement(agreement_id)["phase"] == "RECOVERY_PENDING"
+    assert contract.get_claimable(str(Address(bytes(direct_alice)))) == 0
+
+    contract.recover_inconclusive(agreement_id)
+    assert contract.get_agreement(agreement_id)["phase"] == "REFUNDED"
+    assert contract.get_claimable(str(Address(bytes(direct_alice)))) == 500
+
+
+def test_appeal_requires_exact_bond_value(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy(CONTRACT)
+    agreement_id = _setup_funded_api_agreement(contract, direct_vm, direct_alice, direct_bob, amount=1000)
+    direct_vm.sender = direct_bob
+    digest = hashlib.sha256(b"x").hexdigest()
+    contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
+    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": "bad"})
+    contract.request_evaluation(agreement_id)
+
+    direct_vm.sender = direct_alice
+    direct_vm.value = 1  # required bond is 100 (1000 // 10)
+    with direct_vm.expect_revert():
+        contract.file_appeal(agreement_id, ["c1"], "disagree")
+    direct_vm.value = 0
+    assert contract.get_agreement(agreement_id)["phase"] == "PROVISIONAL_VERDICT"
+
+
+def test_appeal_bond_credited_to_appellant_on_upheld(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy(CONTRACT)
+    from genlayer.py.types import Address
+    agreement_id = _setup_funded_api_agreement(contract, direct_vm, direct_alice, direct_bob, amount=1000)
+    direct_vm.sender = direct_bob
+    digest = hashlib.sha256(b"x").hexdigest()
+    contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
+    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": "bad"})
+    contract.request_evaluation(agreement_id)
+
+    direct_vm.sender = direct_alice
+    direct_vm.value = 100
+    contract.file_appeal(agreement_id, ["c1"], "the endpoint actually returns valid JSON")
+    direct_vm.value = 0
+    direct_vm.clear_mocks()
+    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": json.dumps({"ok": True})})
+    contract.resolve_appeal(agreement_id)
+
+    appeal = contract.get_appeal(contract.get_agreement(agreement_id)["latest_appeal_id"])
+    assert appeal["resolution"] == "UPHELD"
+    assert contract.get_claimable(str(Address(bytes(direct_alice)))) == 100
+
+
+def test_appeal_bond_credited_to_other_party_on_rejected(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy(CONTRACT)
+    from genlayer.py.types import Address
+    agreement_id = _setup_funded_api_agreement(contract, direct_vm, direct_alice, direct_bob, amount=1000)
+    direct_vm.sender = direct_bob
+    digest = hashlib.sha256(b"x").hexdigest()
+    contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
+    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": "bad"})
+    contract.request_evaluation(agreement_id)
+
+    direct_vm.sender = direct_alice
+    direct_vm.value = 100
+    contract.file_appeal(agreement_id, ["c1"], "disagree")
+    direct_vm.value = 0
+    # Same mock, unchanged -- c1 will fail again on re-evaluation, so the
+    # appeal is REJECTED and the bond goes to the other party (the provider).
+    contract.resolve_appeal(agreement_id)
+
+    appeal = contract.get_appeal(contract.get_agreement(agreement_id)["latest_appeal_id"])
+    assert appeal["resolution"] == "REJECTED"
+    assert contract.get_claimable(str(Address(bytes(direct_alice)))) == 0
+    assert contract.get_claimable(str(Address(bytes(direct_bob)))) == 100
