@@ -106,15 +106,10 @@ def test_agent_missing_artifact_without_independent_evidence_is_unverifiable(dir
 
 
 def test_multiple_urls_same_control_not_auto_independent(direct_vm, direct_deploy, direct_alice, direct_bob):
-    """Capability 19 (independence/corroboration): the current implementation
-    does not claim multi-source independence verification beyond requiring
-    each criterion's judgment to be independently rerun by every validator
-    against the same evidence list. Submitting two URLs under the same
-    submitter/role is accepted as evidence but does NOT automatically
-    upgrade sufficiency -- the judge call still receives both and must reason
-    over them explicitly. This test documents that behaviour rather than
-    asserting a corroboration feature that is not implemented (see
-    docs/FEATURE_MATRIX.md, capability 19: PARTIAL)."""
+    """Capability 19 (independence/corroboration): two evidence items for one
+    criterion, both submitted by the same party, are not independent
+    corroboration. The LLM's own claimed sufficiency is respected when it
+    already recognizes the lack of independence (this case)."""
     contract = direct_deploy(CONTRACT)
     agreement_id = _setup_frozen_agent_agreement(contract, direct_vm, direct_alice, direct_bob)
     _submit(contract, direct_vm, direct_bob, agreement_id, "https://artifacts.example.com/summary.txt")
@@ -128,6 +123,54 @@ def test_multiple_urls_same_control_not_auto_independent(direct_vm, direct_deplo
     evaluation_id = contract.request_evaluation(agreement_id)
     evaluation = contract.get_evaluation(evaluation_id)
     assert evaluation["findings"][0]["sufficiency"] == "INSUFFICIENT"
+
+
+def test_same_submitter_sufficient_claim_is_deterministically_downgraded(direct_vm, direct_deploy, direct_alice, direct_bob):
+    """Capability 19, the real fix: unlike the test above (where the model
+    already recognized the lack of independence), this exercises a model
+    that INCORRECTLY claims SUFFICIENT despite both evidence items coming
+    from the same submitter. The contract must not trust that claim at face
+    value -- it deterministically downgrades SUFFICIENT to INSUFFICIENT
+    whenever more than one evidence item for a criterion all share a single
+    submitter, regardless of what the model itself concluded."""
+    contract = direct_deploy(CONTRACT)
+    agreement_id = _setup_frozen_agent_agreement(contract, direct_vm, direct_alice, direct_bob)
+    _submit(contract, direct_vm, direct_bob, agreement_id, "https://artifacts.example.com/summary.txt")
+    _submit(contract, direct_vm, direct_bob, agreement_id, "https://artifacts.example.com/summary-mirror.txt")
+
+    direct_vm.mock_llm(
+        r".*adjudicating.*",
+        json.dumps({"finding": "PASS", "sufficiency": "SUFFICIENT", "rationale": "Both sources confirm the summary."}),
+    )
+    direct_vm.sender = direct_bob
+    evaluation_id = contract.request_evaluation(agreement_id)
+    evaluation = contract.get_evaluation(evaluation_id)
+    finding = evaluation["findings"][0]
+    assert finding["sufficiency"] == "INSUFFICIENT"
+    assert "auto-downgraded" in finding["rationale"]
+    assert finding["finding"] == "PASS"  # the finding itself is untouched; only sufficiency is capped
+
+
+def test_different_submitters_sufficient_claim_is_not_downgraded(direct_vm, direct_deploy, direct_alice, direct_bob):
+    """Boundary/negative case for the capability 19 fix: when the two
+    evidence items for a criterion come from DIFFERENT parties (buyer and
+    provider), that is genuine multi-party corroboration and a SUFFICIENT
+    claim must be left alone."""
+    contract = direct_deploy(CONTRACT)
+    agreement_id = _setup_frozen_agent_agreement(contract, direct_vm, direct_alice, direct_bob)
+    _submit(contract, direct_vm, direct_bob, agreement_id, "https://artifacts.example.com/summary.txt")
+    _submit(contract, direct_vm, direct_alice, agreement_id, "https://artifacts.example.com/summary-mirror.txt")
+
+    direct_vm.mock_llm(
+        r".*adjudicating.*",
+        json.dumps({"finding": "PASS", "sufficiency": "SUFFICIENT", "rationale": "Both sources, from different parties, confirm the summary."}),
+    )
+    direct_vm.sender = direct_bob
+    evaluation_id = contract.request_evaluation(agreement_id)
+    evaluation = contract.get_evaluation(evaluation_id)
+    finding = evaluation["findings"][0]
+    assert finding["sufficiency"] == "SUFFICIENT"
+    assert "auto-downgraded" not in finding["rationale"]
 
 
 def test_agent_judge_actually_fetches_and_includes_real_evidence_content(direct_vm, direct_deploy, direct_alice, direct_bob):

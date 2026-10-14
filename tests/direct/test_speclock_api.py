@@ -123,6 +123,56 @@ def test_evidence_url_blocked_schemes_and_hosts_rejected(direct_vm, direct_deplo
         contract.submit_evidence(agreement_id, "https://user:pass@api.example.com/health", digest, "{}")  # embedded creds
 
 
+def test_evidence_url_private_ip_ranges_and_boundary_cases_rejected(direct_vm, direct_deploy, direct_alice, direct_bob):
+    """Capability 21, additional adversarial/boundary coverage: every
+    BLOCKED_HOST_PATTERNS entry not already covered by the test above, plus
+    structurally malformed URLs (no scheme separator, empty host)."""
+    contract = direct_deploy(CONTRACT)
+    agreement_id = _setup_frozen_agreement(contract, direct_vm, direct_alice, direct_bob)
+    direct_vm.sender = direct_bob
+    digest = hashlib.sha256(b"x").hexdigest()
+
+    for blocked_url in [
+        "https://127.0.0.1/health",
+        "https://0.0.0.0/health",
+        "https://[::1]/health",
+        "https://169.254.169.254/latest/meta-data/",  # cloud metadata SSRF target
+        "https://10.0.0.5/health",
+        "https://192.168.1.1/health",
+    ]:
+        with direct_vm.expect_revert():
+            contract.submit_evidence(agreement_id, blocked_url, digest, "{}")
+
+    for malformed_url in [
+        "not-a-url-at-all",
+        "https://",
+        "ftp://api.example.com/health",  # disallowed scheme
+    ]:
+        with direct_vm.expect_revert():
+            contract.submit_evidence(agreement_id, malformed_url, digest, "{}")
+
+
+def test_evidence_url_and_metadata_size_caps_enforced(direct_vm, direct_deploy, direct_alice, direct_bob):
+    """Capability 21, boundary coverage for resource-exhaustion-style
+    adversarial inputs: an oversized evidence URL and oversized metadata
+    JSON must both be rejected before anything is persisted."""
+    contract = direct_deploy(CONTRACT)
+    agreement_id = _setup_frozen_agreement(contract, direct_vm, direct_alice, direct_bob)
+    direct_vm.sender = direct_bob
+    digest = hashlib.sha256(b"x").hexdigest()
+
+    oversized_url = "https://api.example.com/" + ("a" * 2100)  # > MAX_EVIDENCE_URL_CHARS (2000)
+    with direct_vm.expect_revert():
+        contract.submit_evidence(agreement_id, oversized_url, digest, "{}")
+
+    oversized_metadata = json.dumps({"criterion_id": "c1", "padding": "x" * 4100})  # > MAX_EVIDENCE_METADATA_CHARS (4000)
+    with direct_vm.expect_revert():
+        contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, oversized_metadata)
+
+    with direct_vm.expect_revert():
+        contract.submit_evidence(agreement_id, "https://api.example.com/health", "not-a-valid-digest", "{}")
+
+
 def test_evidence_freezes_and_snapshot_is_immutable_after_evaluation(direct_vm, direct_deploy, direct_alice, direct_bob):
     contract = direct_deploy(CONTRACT)
     agreement_id = _setup_frozen_agreement(contract, direct_vm, direct_alice, direct_bob)

@@ -129,12 +129,15 @@ def test_partial_settlement_splits_funds_by_passed_ratio(direct_vm, direct_deplo
     contract.submit_evidence(agreement_id2, "https://api.example.com/version", digest, json.dumps({"criterion_id": "c2"}))
     evaluation_id2 = contract.request_evaluation(agreement_id2)
     evaluation2 = contract.get_evaluation(evaluation_id2)
-    # c1 passes (required), c2 fails (optional) -> overall derivation only
-    # inspects required criteria, so this still lands on PASS, not PARTIAL;
-    # PARTIAL is produced when a REQUIRED criterion comes back PARTIAL.
-    # Demonstrate the actual PARTIAL settlement math directly instead, since
-    # _derive_overall only escalates to PARTIAL from a required-criterion
-    # PARTIAL finding, which the API evaluator does not emit on its own.
+    # c1 passes (required), c2 fails (optional) -> _derive_overall now
+    # escalates a non-PASS optional criterion to PARTIAL deterministically
+    # (capability 13 fix) rather than silently ignoring it.
+    assert evaluation2["overall_finding"] == "PARTIAL"
+
+    # Demonstrate the settlement math directly as well, using a synthetic
+    # mixed required-PARTIAL case (the one path only the agent-profile LLM
+    # judge can emit on its own, since the API evaluator never returns
+    # PARTIAL from a single criterion):
     findings = [
         {"criterion_id": "c1", "finding": "PASS", "sufficiency": "SUFFICIENT", "rationale": "", "attribution": "UNKNOWN"},
         {"criterion_id": "c2", "finding": "PARTIAL", "sufficiency": "INSUFFICIENT", "rationale": "", "attribution": "UNKNOWN"},
@@ -147,6 +150,88 @@ def test_partial_settlement_splits_funds_by_passed_ratio(direct_vm, direct_deplo
     assert released == 500
     assert refunded == 500
     assert released + refunded == funded
+
+
+def test_partial_settlement_end_to_end_via_failed_optional_criterion(direct_vm, direct_deploy, direct_alice, direct_bob):
+    """Capability 13, full end-to-end proof: a real agreement with one
+    required (PASS) and one optional (FAIL) criterion derives overall
+    PARTIAL deterministically (see _derive_overall), and settle() actually
+    performs the proportional release/refund split -- not just the isolated
+    math demonstrated above."""
+    contract = direct_deploy(CONTRACT)
+    direct_vm.sender = direct_alice
+    agreement_id = contract.create_agreement(
+        direct_bob, "api_delivery", "Deliver two endpoints, one optional",
+        [
+            {"id": "c1", "description": "GET /health returns status ok", "priority": "required", "evidence_method": "http:c1"},
+            {"id": "c2", "description": "GET /version returns version string", "priority": "optional", "evidence_method": "http:c2"},
+        ],
+        1,
+    )
+    direct_vm.sender = direct_bob
+    contract.accept_agreement(agreement_id)
+    direct_vm.sender = direct_alice
+    direct_vm.value = 1000
+    contract.fund_agreement(agreement_id, 1000)
+    direct_vm.value = 0
+    contract.freeze_agreement(agreement_id, False)
+
+    direct_vm.sender = direct_bob
+    digest = hashlib.sha256(b"x").hexdigest()
+    contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
+    contract.submit_evidence(agreement_id, "https://api.example.com/version", digest, json.dumps({"criterion_id": "c2"}))
+    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": json.dumps({"status": "ok"})})
+    direct_vm.mock_web(r".*api\.example\.com/version.*", {"status": 200, "body": "not json"})
+
+    evaluation_id = contract.request_evaluation(agreement_id)
+    evaluation = contract.get_evaluation(evaluation_id)
+    assert evaluation["overall_finding"] == "PARTIAL"
+
+    direct_vm.sender = direct_alice
+    assert contract.finalize_verdict(agreement_id) is False
+    direct_vm.sender = direct_bob
+    assert contract.finalize_verdict(agreement_id) is True
+
+    contract.settle(agreement_id)
+    settlement = contract.get_settlement(agreement_id)
+    assert settlement["released_to_provider"] == 500
+    assert settlement["refunded_to_buyer"] == 500
+    assert settlement["retained"] == 0
+    assert settlement["terminal_phase"] == "SETTLED"
+
+
+def test_all_required_pass_and_all_optional_pass_still_settles_full_pass(direct_vm, direct_deploy, direct_alice, direct_bob):
+    """Boundary/negative case for the capability 13 fix: optional criteria
+    that all PASS must not spuriously trigger PARTIAL -- only a non-PASS
+    optional finding should escalate the verdict."""
+    contract = direct_deploy(CONTRACT)
+    direct_vm.sender = direct_alice
+    agreement_id = contract.create_agreement(
+        direct_bob, "api_delivery", "Deliver two endpoints, one optional",
+        [
+            {"id": "c1", "description": "GET /health returns status ok", "priority": "required", "evidence_method": "http:c1"},
+            {"id": "c2", "description": "GET /version returns version string", "priority": "optional", "evidence_method": "http:c2"},
+        ],
+        1,
+    )
+    direct_vm.sender = direct_bob
+    contract.accept_agreement(agreement_id)
+    direct_vm.sender = direct_alice
+    direct_vm.value = 1000
+    contract.fund_agreement(agreement_id, 1000)
+    direct_vm.value = 0
+    contract.freeze_agreement(agreement_id, False)
+
+    direct_vm.sender = direct_bob
+    digest = hashlib.sha256(b"x").hexdigest()
+    contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
+    contract.submit_evidence(agreement_id, "https://api.example.com/version", digest, json.dumps({"criterion_id": "c2"}))
+    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": json.dumps({"status": "ok"})})
+    direct_vm.mock_web(r".*api\.example\.com/version.*", {"status": 200, "body": json.dumps({"version": "1.0"})})
+
+    evaluation_id = contract.request_evaluation(agreement_id)
+    evaluation = contract.get_evaluation(evaluation_id)
+    assert evaluation["overall_finding"] == "PASS"
 
 
 def test_appeal_rejected_when_challenged_finding_does_not_actually_change(direct_vm, direct_deploy, direct_alice, direct_bob):
@@ -203,6 +288,45 @@ def test_appeal_upheld_when_challenged_finding_genuinely_changes(direct_vm, dire
     assert appeal["resolution"] == "UPHELD"
 
 
+def test_resolve_appeal_only_rejudges_challenged_criteria(direct_vm, direct_deploy, direct_alice, direct_bob):
+    """Capability 26, the real narrowing fix: only c1 (challenged) is
+    re-judged on appeal resolution. c2 (unchallenged) must keep its ORIGINAL
+    finding even though its live evidence is changed to something that would
+    flip the result if it were re-judged -- proving the unchallenged
+    criterion is genuinely carried forward, not silently re-run."""
+    contract = direct_deploy(CONTRACT)
+    agreement_id = _two_criteria_agreement(contract, direct_vm, direct_alice, direct_bob)
+    direct_vm.sender = direct_bob
+    digest = hashlib.sha256(b"x").hexdigest()
+    contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
+    contract.submit_evidence(agreement_id, "https://api.example.com/version", digest, json.dumps({"criterion_id": "c2"}))
+    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": "bad"})
+    direct_vm.mock_web(r".*api\.example\.com/version.*", {"status": 200, "body": json.dumps({"v": "1"})})
+    contract.request_evaluation(agreement_id)
+    original_evaluation = contract.get_evaluation(contract.get_agreement(agreement_id)["latest_evaluation_id"])
+    original_by_id = {f["criterion_id"]: f["finding"] for f in original_evaluation["findings"]}
+    assert original_by_id["c1"] == "FAIL"
+    assert original_by_id["c2"] == "PASS"
+
+    direct_vm.sender = direct_alice
+    direct_vm.value = 100
+    contract.file_appeal(agreement_id, ["c1"], "the endpoint now returns valid JSON")
+    direct_vm.value = 0
+    # c1's evidence genuinely improves (FAIL -> PASS if re-judged).
+    # c2's evidence is changed to something that would flip it to FAIL if it
+    # were re-judged -- but it is NOT challenged, so it must not be.
+    direct_vm.clear_mocks()
+    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": json.dumps({"status": "ok"})})
+    direct_vm.mock_web(r".*api\.example\.com/version.*", {"status": 200, "body": "not json anymore"})
+    contract.resolve_appeal(agreement_id)
+
+    new_evaluation = contract.get_evaluation(contract.get_agreement(agreement_id)["latest_evaluation_id"])
+    new_by_id = {f["criterion_id"]: f["finding"] for f in new_evaluation["findings"]}
+    assert new_by_id["c1"] == "PASS"  # genuinely re-judged, changed
+    assert new_by_id["c2"] == "PASS"  # carried forward unchanged, NOT re-judged despite evidence that would now fail it
+    assert new_evaluation["overall_finding"] == "PASS"
+
+
 def test_deterministic_replay_of_settlement_math(direct_vm, direct_deploy, direct_alice, direct_bob):
     """Capability 38: the deterministic portion of an evaluation (overall
     finding -> settlement split) is fully reproducible from the captured
@@ -235,11 +359,40 @@ def test_deterministic_replay_of_settlement_math(direct_vm, direct_deploy, direc
     replayed = replay_overall(captured["findings"], {"c1", "c2"})
     assert replayed == captured["overall_finding"] == "PASS"
 
-    direct_vm.sender = direct_alice
-    contract.finalize_verdict(agreement_id)
+
+def test_verify_settlement_replay_confirms_real_settlement_matches_recorded_evaluation(direct_vm, direct_deploy, direct_alice, direct_bob):
+    """Capability 38, the on-chain form: unlike the off-chain replay above
+    (which recomputes the math in the test itself), this exercises the
+    contract's own `verify_settlement_replay` view -- a genuine, callable,
+    on-chain capability that anyone can use to confirm a settlement truly
+    follows from its recorded evaluation, using the exact same
+    `_compute_settlement_amounts` function `settle()` itself calls."""
+    contract = direct_deploy(CONTRACT)
+    agreement_id = _two_criteria_agreement(contract, direct_vm, direct_alice, direct_bob)
     direct_vm.sender = direct_bob
-    contract.finalize_verdict(agreement_id)
+    digest = hashlib.sha256(b"x").hexdigest()
+    contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
+    contract.submit_evidence(agreement_id, "https://api.example.com/version", digest, json.dumps({"criterion_id": "c2"}))
+    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": json.dumps({"status": "ok"})})
+    direct_vm.mock_web(r".*api\.example\.com/version.*", {"status": 200, "body": json.dumps({"v": "1"})})
+    contract.request_evaluation(agreement_id)
+
     direct_vm.sender = direct_alice
+    assert contract.finalize_verdict(agreement_id) is False
+    direct_vm.sender = direct_bob
+    assert contract.finalize_verdict(agreement_id) is True
     contract.settle(agreement_id)
-    settlement = contract.get_settlement(agreement_id)
-    assert settlement["released_to_provider"] == 1000  # matches replayed PASS
+
+    replay = contract.verify_settlement_replay(agreement_id)
+    assert replay["matches_recorded_settlement"] is True
+    assert replay["recomputed_released_to_provider"] == 1000
+    assert replay["recomputed_refunded_to_buyer"] == 0
+    assert replay["recomputed_retained"] == 0
+    assert replay["recomputed_terminal_phase"] == "SETTLED"
+
+
+def test_verify_settlement_replay_rejects_unsettled_agreement(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy(CONTRACT)
+    agreement_id = _two_criteria_agreement(contract, direct_vm, direct_alice, direct_bob)
+    with direct_vm.expect_revert():
+        contract.verify_settlement_replay(agreement_id)

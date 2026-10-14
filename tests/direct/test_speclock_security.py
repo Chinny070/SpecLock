@@ -555,3 +555,90 @@ def test_appeal_bond_credited_to_other_party_on_rejected(direct_vm, direct_deplo
     assert appeal["resolution"] == "REJECTED"
     assert contract.get_claimable(str(Address(bytes(direct_alice)))) == 0
     assert contract.get_claimable(str(Address(bytes(direct_bob)))) == 100
+
+
+# ---------------------------------------------------------------------------
+# Capability 25: a bounded, exceptional "procedural review" tier, distinct
+# from the ordinary appeal -- only available once ordinary appeal rounds are
+# exhausted, usable exactly once, and requiring BOTH parties' mutual consent
+# (unlike an ordinary appeal, which either party may trigger unilaterally).
+# ---------------------------------------------------------------------------
+
+def _exhaust_appeal_rounds(contract, direct_vm, buyer, provider, agreement_id):
+    """Drives an agreement through both of its default max_appeal_rounds (2)
+    so request_procedural_review becomes available."""
+    digest = hashlib.sha256(b"x").hexdigest()
+    direct_vm.sender = provider
+    contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
+    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": "bad"})
+    contract.request_evaluation(agreement_id)
+
+    direct_vm.sender = buyer
+    direct_vm.value = 100
+    contract.file_appeal(agreement_id, ["c1"], "round 1")
+    direct_vm.value = 0
+    contract.resolve_appeal(agreement_id)
+
+    direct_vm.value = 100
+    contract.file_appeal(agreement_id, ["c1"], "round 2")
+    direct_vm.value = 0
+    contract.resolve_appeal(agreement_id)
+
+
+def test_procedural_review_unavailable_before_appeal_rounds_exhausted(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy(CONTRACT)
+    agreement_id = _setup_funded_api_agreement(contract, direct_vm, direct_alice, direct_bob, amount=1000)
+    direct_vm.sender = direct_bob
+    digest = hashlib.sha256(b"x").hexdigest()
+    contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
+    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": "bad"})
+    contract.request_evaluation(agreement_id)
+
+    direct_vm.sender = direct_alice
+    with direct_vm.expect_revert():
+        contract.request_procedural_review(agreement_id)
+
+
+def test_procedural_review_requires_both_parties_mutual_consent(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy(CONTRACT)
+    agreement_id = _setup_funded_api_agreement(contract, direct_vm, direct_alice, direct_bob, amount=1000)
+    _exhaust_appeal_rounds(contract, direct_vm, direct_alice, direct_bob, agreement_id)
+    assert contract.get_agreement(agreement_id)["phase"] == "PROVISIONAL_VERDICT"
+
+    direct_vm.sender = direct_alice
+    first = contract.request_procedural_review(agreement_id)
+    assert first is False
+    assert contract.get_agreement(agreement_id)["phase"] == "PROVISIONAL_VERDICT"  # not yet triggered
+
+    # Same party calling again must be rejected (no double-consent).
+    with direct_vm.expect_revert():
+        contract.request_procedural_review(agreement_id)
+
+    direct_vm.sender = direct_bob
+    direct_vm.clear_mocks()
+    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": json.dumps({"ok": True})})
+    second = contract.request_procedural_review(agreement_id)
+    assert second is True
+
+    agreement = contract.get_agreement(agreement_id)
+    assert agreement["procedural_review_used"] is True
+    assert agreement["phase"] == "PROVISIONAL_VERDICT"  # the triggered re-evaluation produced a fresh verdict
+    evaluation = contract.get_evaluation(agreement["latest_evaluation_id"])
+    assert evaluation["overall_finding"] == "PASS"  # genuinely re-evaluated against the now-fixed evidence
+
+
+def test_procedural_review_usable_exactly_once(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy(CONTRACT)
+    agreement_id = _setup_funded_api_agreement(contract, direct_vm, direct_alice, direct_bob, amount=1000)
+    _exhaust_appeal_rounds(contract, direct_vm, direct_alice, direct_bob, agreement_id)
+
+    direct_vm.sender = direct_alice
+    contract.request_procedural_review(agreement_id)
+    direct_vm.sender = direct_bob
+    assert contract.request_procedural_review(agreement_id) is True
+
+    # Even on the fresh provisional verdict that resulted, procedural review
+    # cannot be used a second time for this agreement.
+    direct_vm.sender = direct_alice
+    with direct_vm.expect_revert():
+        contract.request_procedural_review(agreement_id)

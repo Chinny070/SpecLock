@@ -215,7 +215,16 @@ def _validate_url(url: str) -> None:
         raise gl.vm.UserError(f"{ERROR_EXPECTED} embedded credentials not allowed in evidence URL")
     if scheme not in ALLOWED_SCHEMES:
         raise gl.vm.UserError(f"{ERROR_EXPECTED} unsupported URL scheme: {scheme}")
-    host_only = host.split(":")[0]
+    # Capability 21: a bracketed IPv6 literal host (e.g. "[::1]:443") was
+    # previously mishandled here -- splitting on ":" to strip a port number
+    # also split the IPv6 address itself apart (an IPv6 literal contains
+    # colons), leaving host_only as just "[" and silently bypassing the
+    # "::1" blocklist entry entirely. Found via an adversarial boundary test
+    # added during a capability audit; fixed by stripping brackets first.
+    if host.startswith("[") and "]" in host:
+        host_only = host[1 : host.index("]")]
+    else:
+        host_only = host.split(":")[0]
     for blocked in BLOCKED_HOST_PATTERNS:
         if host_only == blocked or host_only.startswith(blocked):
             raise gl.vm.UserError(f"{ERROR_EXPECTED} blocked host for evidence URL")
@@ -269,6 +278,9 @@ class Agreement:
     latest_appeal_id: str
     settlement_id: str
     ambiguity_report: str
+    buyer_wants_procedural_review: bool
+    provider_wants_procedural_review: bool
+    procedural_review_used: bool
 
 
 @allow_storage
@@ -496,6 +508,9 @@ class SpecLock(gl.Contract):
             latest_appeal_id="",
             settlement_id="",
             ambiguity_report=ambiguity_report,
+            buyer_wants_procedural_review=False,
+            provider_wants_procedural_review=False,
+            procedural_review_used=False,
         )
         self.agreements[agreement_id] = agreement
         self.evidence_index.get_or_insert_default(agreement_id)
@@ -652,6 +667,17 @@ class SpecLock(gl.Contract):
 
     @gl.public.write
     def request_evaluation(self, agreement_id: str) -> str:
+        return self._request_evaluation_impl(agreement_id, restrict_to_ids=None, carry_forward_findings=None)
+
+    def _request_evaluation_impl(self, agreement_id: str, restrict_to_ids, carry_forward_findings) -> str:
+        """Capability 26: `resolve_appeal` calls this with `restrict_to_ids`
+        set to only the specifically-challenged criterion ids, and
+        `carry_forward_findings` set to the prior (challenged) evaluation's
+        full findings list. Unaffected criteria are never re-judged -- their
+        prior finding is carried forward verbatim -- while the overall
+        verdict is still recomputed over the full, merged findings set, so a
+        narrower re-evaluation can never silently drop a criterion from the
+        final result."""
         agreement = self._get_agreement(agreement_id)
         self._require(
             agreement.phase in (PHASE_SUBMITTED, PHASE_RE_EVALUATING),
@@ -663,19 +689,27 @@ class SpecLock(gl.Contract):
 
         self._freeze_all_evidence(agreement_id)
         snapshot = self._evidence_snapshot_commitment(agreement_id)
-        criteria = json.loads(agreement.criteria_json)
+        all_criteria = json.loads(agreement.criteria_json)
+        criteria_to_judge = (
+            all_criteria if restrict_to_ids is None else [c for c in all_criteria if c["id"] in restrict_to_ids]
+        )
         evidence_recs = [self.evidence[rid] for rid in self.evidence_index[agreement_id] if self.evidence[rid].status == "FROZEN"]
 
         if agreement.profile == PROFILE_API:
-            result = self._evaluate_api_profile(criteria, evidence_recs)
+            result = self._evaluate_api_profile(criteria_to_judge, evidence_recs)
         else:
-            result = self._evaluate_agent_profile(criteria, evidence_recs)
+            result = self._evaluate_agent_profile(criteria_to_judge, evidence_recs)
 
-        findings = result["findings"]
+        new_findings = result["findings"]
+        if carry_forward_findings is not None:
+            new_ids = {f["criterion_id"] for f in new_findings}
+            findings = [f for f in carry_forward_findings if f["criterion_id"] not in new_ids] + new_findings
+        else:
+            findings = new_findings
         ambiguous_ids = {a["criterion_id"] for a in json.loads(agreement.ambiguity_report)}
         findings = self._apply_specification_attribution(findings, ambiguous_ids)
-        overall = self._derive_overall(findings, criteria)
-        attribution = self._derive_aggregate_attribution(findings, criteria)
+        overall = self._derive_overall(findings, all_criteria)
+        attribution = self._derive_aggregate_attribution(findings, all_criteria)
 
         evaluation_id = f"{agreement_id}-eval{self.next_evaluation_seq}"
         self.next_evaluation_seq = u256(int(self.next_evaluation_seq) + 1)
@@ -739,13 +773,26 @@ class SpecLock(gl.Contract):
         return ATTRIBUTION_UNKNOWN
 
     def _derive_overall(self, findings: list, criteria: list) -> str:
+        """Capability 13: optional criteria previously had zero effect on the
+        overall verdict once every required criterion passed -- an optional
+        criterion could FAIL/UNVERIFIABLE entirely silently, with no partial
+        settlement. Real `PARTIAL` can also only ever be produced by the
+        agent profile's LLM judge (nondeterministically); the API evaluator
+        never emits it on its own. Fixed deterministically: once every
+        required criterion is satisfied, a non-PASS optional criterion now
+        escalates the overall verdict to PARTIAL instead of being silently
+        dropped, giving `settle()`'s proportional-release branch a real,
+        forceable, deterministic trigger path."""
         required_ids = {c["id"] for c in criteria if c["priority"] == "required"}
+        optional_ids = {c["id"] for c in criteria if c["priority"] == "optional"}
         by_id = {f["criterion_id"]: f for f in findings}
         if any(by_id.get(cid, {}).get("finding") == FINDING_FAIL for cid in required_ids):
             return FINDING_FAIL
         if any(by_id.get(cid, {}).get("finding") == FINDING_UNVERIFIABLE for cid in required_ids):
             return FINDING_UNVERIFIABLE
         if any(by_id.get(cid, {}).get("finding") == FINDING_PARTIAL for cid in required_ids):
+            return FINDING_PARTIAL
+        if any(by_id.get(cid, {}).get("finding") != FINDING_PASS for cid in optional_ids):
             return FINDING_PARTIAL
         return FINDING_PASS
 
@@ -905,6 +952,16 @@ class SpecLock(gl.Contract):
         URL/digest pair."""
         urls = [e.url for e in evidences]
         digests_by_url = {e.url: e.content_digest for e in evidences}
+        # Capability 19: a deterministic independence pre-check, computed
+        # identically by the leader and every validator from the same frozen
+        # evidence records (never from the nondet LLM call itself, so it
+        # cannot introduce a new equivalence-comparison risk). Multiple
+        # evidence items submitted by a single party are not independent
+        # corroboration no matter what the model concludes, so a model
+        # claiming SUFFICIENT in that case is deterministically downgraded
+        # rather than trusted at face value.
+        distinct_submitters = {str(e.submitter) for e in evidences}
+        not_independently_corroborated = len(evidences) > 1 and len(distinct_submitters) == 1
 
         def judge() -> dict:
             sources = [
@@ -935,6 +992,12 @@ class SpecLock(gl.Contract):
             ):
                 raise gl.vm.UserError(f"{ERROR_LLM} invalid sufficiency enum: {sufficiency}")
             rationale = str(data.get("rationale", ""))[:MAX_RATIONALE_CHARS]
+            if not_independently_corroborated and sufficiency == SUFFICIENCY_SUFFICIENT:
+                sufficiency = SUFFICIENCY_INSUFFICIENT
+                rationale = (
+                    rationale + " [auto-downgraded: all evidence for this criterion was "
+                    "submitted by a single party, so it is not independently corroborated]"
+                )[:MAX_RATIONALE_CHARS]
             return {"finding": finding, "sufficiency": sufficiency, "rationale": rationale}
 
         def validator_fn(leaders_res) -> bool:
@@ -1040,11 +1103,18 @@ class SpecLock(gl.Contract):
 
         agreement.phase = PHASE_RE_EVALUATING
         self.agreements[agreement_id] = agreement
-        new_evaluation_id = self.request_evaluation(agreement_id)
-
         old_eval = self.evaluations[challenged_evaluation_id]
+        old_findings = json.loads(old_eval.findings_json)
+        # Capability 26: only the specifically-challenged criteria are
+        # re-judged -- every unchallenged criterion's finding is carried
+        # forward verbatim rather than re-running the full semantic
+        # judgment for criteria nobody disputed.
+        new_evaluation_id = self._request_evaluation_impl(
+            agreement_id, restrict_to_ids=challenged_ids, carry_forward_findings=old_findings
+        )
+
         new_eval = self.evaluations[new_evaluation_id]
-        old_by_id = {f["criterion_id"]: f["finding"] for f in json.loads(old_eval.findings_json)}
+        old_by_id = {f["criterion_id"]: f["finding"] for f in old_findings}
         new_by_id = {f["criterion_id"]: f["finding"] for f in json.loads(new_eval.findings_json)}
         changed = any(old_by_id.get(cid) != new_by_id.get(cid) for cid in challenged_ids)
         appeal.resolution_evaluation_id = new_evaluation_id
@@ -1064,6 +1134,47 @@ class SpecLock(gl.Contract):
             else:
                 other_party = agreement.provider if appeal.appellant == agreement.buyer else agreement.buyer
                 self._credit(other_party, bond)
+
+    @gl.public.write
+    def request_procedural_review(self, agreement_id: str) -> bool:
+        """Capability 25: a bounded, exceptional review tier distinct from
+        the ordinary appeal (`file_appeal`/`resolve_appeal`), only available
+        once ordinary appeal rounds are exhausted (`appeal_rounds_used >=
+        max_appeal_rounds`) and usable exactly once per agreement
+        (`procedural_review_used`). Unlike an ordinary appeal (which either
+        party may trigger unilaterally, admissible without the other side's
+        agreement), a procedural review requires BOTH parties to separately
+        request it — the same mutual-consent pattern as `finalize_verdict`/
+        `cancel_or_expire` — since this is a genuinely exceptional,
+        irreducible-question escalation rather than a routine admissible
+        challenge, and triggers a full re-evaluation of every criterion (not
+        narrowed to specific challenged ids, since by this point there is no
+        single remaining admissible challenge left to narrow to). Returns
+        `True` once the second party's consent actually triggers the
+        review, `False` while only one party has consented so far."""
+        agreement = self._get_agreement(agreement_id)
+        self._require(agreement.phase == PHASE_PROVISIONAL_VERDICT, "procedural review only possible on a provisional verdict")
+        self._require(
+            int(agreement.appeal_rounds_used) >= int(agreement.max_appeal_rounds),
+            "procedural review is only available once ordinary appeal rounds are exhausted",
+        )
+        self._require(not agreement.procedural_review_used, "procedural review already used for this agreement")
+        caller = gl.message.sender_address
+        self._require(self._is_party(agreement, caller), "only a party may request procedural review")
+        if caller == agreement.buyer:
+            self._require(not agreement.buyer_wants_procedural_review, "buyer has already requested procedural review")
+            agreement.buyer_wants_procedural_review = True
+        else:
+            self._require(not agreement.provider_wants_procedural_review, "provider has already requested procedural review")
+            agreement.provider_wants_procedural_review = True
+        if not (agreement.buyer_wants_procedural_review and agreement.provider_wants_procedural_review):
+            self.agreements[agreement_id] = agreement
+            return False
+        agreement.procedural_review_used = True
+        agreement.phase = PHASE_RE_EVALUATING
+        self.agreements[agreement_id] = agreement
+        self._request_evaluation_impl(agreement_id, restrict_to_ids=None, carry_forward_findings=None)
+        return True
 
     @gl.public.write
     def request_resubmission(self, agreement_id: str) -> None:
@@ -1161,6 +1272,27 @@ class SpecLock(gl.Contract):
         self._credit(agreement.provider, released)
         self._credit(agreement.buyer, refunded)
 
+    def _compute_settlement_amounts(self, funded: int, evaluation: "Evaluation") -> tuple:
+        """Capability 31/38: the pure, deterministic function from (funded
+        amount, recorded evaluation) to (released, refunded, retained,
+        terminal_phase_if_settled_now). Extracted so `settle()` and the
+        read-only `verify_settlement_replay` view below can never drift
+        apart — both call this exact same code, so the view's recomputation
+        is genuinely the same math `settle()` would perform, not a
+        reimplementation that could silently diverge."""
+        if evaluation.overall_finding == FINDING_PASS:
+            return funded, 0, 0, PHASE_SETTLED
+        if evaluation.overall_finding == FINDING_FAIL:
+            return 0, funded, 0, PHASE_SETTLED
+        if evaluation.overall_finding == FINDING_PARTIAL:
+            findings = json.loads(evaluation.findings_json)
+            passed = sum(1 for f in findings if f["finding"] == FINDING_PASS)
+            total = max(1, len(findings))
+            released = (funded * passed) // total
+            refunded = funded - released
+            return released, refunded, 0, PHASE_SETTLED
+        return 0, 0, funded, PHASE_RECOVERY_PENDING  # UNVERIFIABLE
+
     @gl.public.write
     def settle(self, agreement_id: str) -> str:
         agreement = self._get_agreement(agreement_id)
@@ -1168,22 +1300,8 @@ class SpecLock(gl.Contract):
         self._require(agreement.settlement_id == "", "settlement already recorded for this agreement")
         evaluation = self.evaluations[agreement.latest_evaluation_id]
         funded = int(agreement.funded_amount)
-        if evaluation.overall_finding == FINDING_PASS:
-            released, refunded, retained = funded, 0, 0
-        elif evaluation.overall_finding == FINDING_FAIL:
-            released, refunded, retained = 0, funded, 0
-        elif evaluation.overall_finding == FINDING_PARTIAL:
-            findings = json.loads(evaluation.findings_json)
-            passed = sum(1 for f in findings if f["finding"] == FINDING_PASS)
-            total = max(1, len(findings))
-            released = (funded * passed) // total
-            refunded = funded - released
-            retained = 0
-        else:  # UNVERIFIABLE never auto-awards disputed principal
-            released, refunded, retained = 0, 0, funded
-            self._settle(agreement, released, refunded, retained, PHASE_RECOVERY_PENDING)
-            return agreement.settlement_id
-        self._settle(agreement, released, refunded, retained, PHASE_SETTLED)
+        released, refunded, retained, terminal_phase = self._compute_settlement_amounts(funded, evaluation)
+        self._settle(agreement, released, refunded, retained, terminal_phase)
         return agreement.settlement_id
 
     @gl.public.write
@@ -1249,6 +1367,9 @@ class SpecLock(gl.Contract):
             "provider_ready_to_finalize": a.provider_ready_to_finalize,
             "buyer_consents_expire": a.buyer_consents_expire,
             "provider_consents_expire": a.provider_consents_expire,
+            "buyer_wants_procedural_review": a.buyer_wants_procedural_review,
+            "provider_wants_procedural_review": a.provider_wants_procedural_review,
+            "procedural_review_used": a.procedural_review_used,
         }
 
     @gl.public.view
@@ -1363,6 +1484,53 @@ class SpecLock(gl.Contract):
     @gl.public.view
     def get_policy_fingerprint(self, agreement_id: str) -> str:
         return self._get_agreement(agreement_id).spec_fingerprint
+
+    @gl.public.view
+    def verify_settlement_replay(self, agreement_id: str) -> dict:
+        """Capability 38, the strongest supported form of replay this
+        contract can honestly offer. This is NOT exact historical execution
+        replay: the original nondeterministic observation (a live web fetch
+        or an LLM judgment) is never re-run here, and the module docstring
+        / docs/THREAT_MODEL.md are explicit that a changed live source
+        cannot be replayed once its content moves on. What this view DOES
+        genuinely prove, on demand, for anyone (not just the parties): that
+        the agreement's recorded settlement is the deterministic,
+        reproducible output of its recorded evaluation and funded amount --
+        recomputed here via the exact same `_compute_settlement_amounts`
+        function `settle()` itself called, not a separate reimplementation
+        that could silently drift. A caller gets a concrete, checkable
+        answer to "does this settlement actually follow from this
+        evaluation, or could it have been tampered with / drifted?" without
+        trusting a one-time claim that it does."""
+        agreement = self._get_agreement(agreement_id)
+        self._require(agreement.settlement_id != "", "agreement not settled")
+        evaluation = self.evaluations[agreement.latest_evaluation_id]
+        settlement = self.settlements[agreement.settlement_id]
+        funded = int(agreement.funded_amount)
+        recomputed_released, recomputed_refunded, recomputed_retained, recomputed_terminal_phase = (
+            self._compute_settlement_amounts(funded, evaluation)
+        )
+        matches = (
+            recomputed_released == int(settlement.released_to_provider)
+            and recomputed_refunded == int(settlement.refunded_to_buyer)
+            and recomputed_retained == int(settlement.retained)
+            and recomputed_terminal_phase == settlement.terminal_phase
+        )
+        return {
+            "agreement_id": agreement_id,
+            "evaluation_id": agreement.latest_evaluation_id,
+            "recorded_settlement_id": agreement.settlement_id,
+            "recomputed_released_to_provider": recomputed_released,
+            "recomputed_refunded_to_buyer": recomputed_refunded,
+            "recomputed_retained": recomputed_retained,
+            "recomputed_terminal_phase": recomputed_terminal_phase,
+            "matches_recorded_settlement": matches,
+            "note": (
+                "This recomputes the deterministic settlement math from the recorded "
+                "evaluation and funded amount; it does not and cannot re-run the original "
+                "live web fetch or LLM judgment that produced the evaluation itself."
+            ),
+        }
 
     @gl.public.view
     def get_reputation(self, subject: Address) -> dict:
