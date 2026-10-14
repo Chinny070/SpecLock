@@ -1,16 +1,16 @@
 # Runbook: remaining Studionet steps
 
-Both evaluation profiles have now been fully exercised live on Studio Network (see `docs/DEPLOYMENT.md`): API-delivery (`"2"` negative, `"4"` positive) and AI-agent-delivery (`"5"` positive, `"6"` an honest `UNVERIFIABLE`). What remains is small and optional:
+Both evaluation profiles have now been fully exercised live on Studio Network (see `docs/DEPLOYMENT.md`): API-delivery (`"2"` negative, `"4"` positive) and AI-agent-delivery (`"5"` positive, `"6"` an honest `UNVERIFIABLE`). A real native-value escrow + appeal-bond design was also built, deployed, and live-tested on a separate contract and reverted after a confirmed runtime failure (see item 2 below and `docs/DEPLOYMENT.md`). What remains is small:
 
-**Contract:** `0x6bBcF7E85f8F07B54ba53ae2126E2E9F6485eE68` on `studionet` (chain id `61999`).
+**Final contract:** `0xD5602E88b021573cbb364Efaae8DCD48DF555ff7` on `studionet` (chain id `61999`). The four lifecycle agreements above ran on the predecessor deployment `0x6bBcF7E85f8F07B54ba53ae2126E2E9F6485eE68` (identical application logic).
 
-## 1. Complete agreement "6"'s refund (`recover_inconclusive`)
+## 1. Complete agreement "6"'s refund (`recover_inconclusive`) — not yet re-demonstrated live
 
-Agreement `"6"` is sitting in `RECOVERY_PENDING` with its full funded amount retained (nothing credited to either party — the correct, safe state for an `UNVERIFIABLE` verdict). Calling `recover_inconclusive("6")` (signed by either the buyer or provider of that agreement — their addresses are in `docs/DEPLOYMENT.md`, though those are disposable keys not persisted anywhere, so this would need a fresh `recover_inconclusive` call from whatever account currently has standing, or simply demonstrating the same call on a new test agreement) completes the refund. Already covered functionally by `tests/direct/test_speclock_security.py::test_unverifiable_overall_recovers_funds_without_awarding_either_party`.
+Agreement `"6"` is sitting in `RECOVERY_PENDING` with its full funded amount retained (nothing credited to either party — the correct, safe state for an `UNVERIFIABLE` verdict). Its disposable buyer/provider keys exist only inside the Node process that generated them (`createAccount()` never exposes a raw private key) and cannot be reused from a fresh script invocation — the same issue that stranded agreement `"3"` earlier. A retry of a full fresh one-shot script (create → ... → `UNVERIFIABLE` → `settle` → `recover_inconclusive`, all in one process) was attempted in this pass but the process crashed on a transient Studio Network RPC error (`"Unexpected token '<', \"<!DOCTYPE \"..."`, an HTML error page instead of JSON) partway through the positive-case agreement, before reaching the recovery step. This is tracked as a genuinely incomplete item, not silently dropped. Already covered functionally by `tests/direct/test_speclock_security.py::test_unverifiable_overall_recovers_funds_without_awarding_either_party`. Smallest next action: rerun the same one-shot script with retry/backoff around every RPC call (the pattern already used elsewhere in `docs/DEPLOYMENT.md`'s scripts).
 
-## 2. Native escrow verification (capability #3)
+## 2. Native escrow verification (capability #3) — attempted, found unsafe, reverted
 
-Everything proven so far is bookkeeping settlement, not real value custody. Verifying actual GEN moving through a payable contract method would require implementing a `@gl.public.write.payable` method and testing it against a funded signer — a real scope addition, not just a lifecycle run, and not attempted in this pass.
+A real `@gl.public.write.payable` `fund_agreement` plus `emit_transfer`-based payouts in `_settle`/`resolve_appeal` were implemented, deployed (`0xaa54c150B128843e5638cF31e2F1B632117ccBE2`), and tested against a funded signer. Deposits genuinely worked; payouts to a plain wallet (EOA) recipient failed on-chain (`result_name:"NO_MAJORITY"`, `value_credited:false`, decoded `"Contract ... not found"`). The design was reverted back to bookkeeping-only to avoid shipping a fund-lock hazard. This is a confirmed runtime limitation with full transaction evidence, not an unattempted scope item — see `docs/DEPLOYMENT.md` "Native-value escrow: attempted, found unsafe, reverted", `docs/THREAT_MODEL.md`, `docs/SECURITY.md`, `DECISION.md` item 8.
 
 ## How to reproduce or extend the lifecycle tests already run
 

@@ -31,9 +31,7 @@ def _setup_frozen_agent_agreement(contract, direct_vm, buyer, provider):
     direct_vm.sender = provider
     contract.accept_agreement(agreement_id)
     direct_vm.sender = buyer
-    direct_vm.value = 800
-    contract.fund_agreement(agreement_id)
-    direct_vm.value = 0
+    contract.fund_agreement(agreement_id, 800)
     contract.freeze_agreement(agreement_id, False)
     return agreement_id
 

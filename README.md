@@ -2,7 +2,7 @@
 
 A single, standalone GenLayer Intelligent Contract for universal digital-delivery agreement and adjudication. One canonical contract (`contracts/speclock.py`), two fully-implemented evaluation profiles, no marketplace frontend/database/off-chain adjudicator.
 
-**Status: deployed and functionally proven on GenLayer Studio Network, both evaluation profiles.** See `SUBMISSION.md` for the honest verdict and `docs/FEATURE_MATRIX.md` for per-capability status. 43/43 Direct Mode tests pass; `genvm-lint check`/`validate` are clean. Live at `0x6bBcF7E85f8F07B54ba53ae2126E2E9F6485eE68` (chain id `61999`): four complete real agreement lifecycles — `create_agreement` through `settle` — ran under genuine multi-validator consensus: API-delivery `FAIL` and `PASS`, and AI-agent-delivery `PASS` and an honest `UNVERIFIABLE` that correctly triggered fund recovery. See `docs/DEPLOYMENT.md` for the full transaction-by-transaction evidence.
+**Status: deployed and functionally proven on GenLayer Studio Network, both evaluation profiles.** See `SUBMISSION.md` for the honest verdict and `docs/FEATURE_MATRIX.md` for per-capability status. 44/44 Direct Mode tests pass; `genvm-lint check`/`validate` are clean. Final contract `0xD5602E88b021573cbb364Efaae8DCD48DF555ff7` (chain id `61999`); four complete real agreement lifecycles — `create_agreement` through `settle` — ran on a predecessor deployment with identical logic under genuine multi-validator consensus: API-delivery `FAIL` and `PASS`, and AI-agent-delivery `PASS` and an honest `UNVERIFIABLE` that correctly triggered fund recovery. A real native-value escrow + appeal-bond design was also built, deployed, and live-tested: deposits genuinely worked, but payouts to plain wallet addresses failed on this runtime (`"Contract ... not found"`), so the design was deliberately reverted to bookkeeping-only to avoid a fund-lock hazard — see `docs/DEPLOYMENT.md` for the full transaction-by-transaction evidence on both.
 
 ## Quickstart
 
@@ -16,7 +16,7 @@ gltest tests/direct/ -v
 
 - **Deterministic contract code** owns authorization, lifecycle, bounds, the specification compiler, and settlement math.
 - **Validator-adjudicated (nondeterministic) code** only answers "what does the evidence show for this one frozen criterion" — every leader judgment is independently re-derived and compared by validators via `gl.vm.run_nondet_unsafe`, never trusted on the leader's say-so alone (see `docs/CONSENSUS.md`).
-- **No verified native-value escrow.** `fund_agreement` is bookkeeping only — see `docs/GENLAYER_CAPABILITIES.md` and `docs/DEPLOYMENT.md`.
+- **No native-value escrow — tried, found unsafe, reverted.** `fund_agreement` is bookkeeping only. A real payable-deposit/`emit_transfer`-payout design was built and live-tested; payouts to plain wallet addresses failed on this GenVM runtime, so it was reverted before shipping to avoid a fund-lock hazard — see `docs/GENLAYER_CAPABILITIES.md`, `docs/DEPLOYMENT.md`, and `docs/SECURITY.md`.
 - **No wall-clock time is used anywhere.** The installed runner exposes no usable on-chain timestamp (see `docs/GENLAYER_CAPABILITIES.md`). An earlier caller-supplied-timestamp design was audited, found manipulable by a self-interested party, and replaced: `finalize_verdict` and the FROZEN branch of `cancel_or_expire` now require both buyer and provider to separately consent — neither can be forced by one party alone (`docs/THREAT_MODEL.md` "clock redesign").
 
 ## Two evaluation profiles

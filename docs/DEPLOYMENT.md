@@ -1,8 +1,8 @@
 # Deployment
 
-## Status: DEPLOYED to GenLayer Studio Network. Full real lifecycle executed and verified on-chain for both profiles — API delivery (negative + positive) and AI-agent delivery (positive + an UNVERIFIABLE/recovery case) — every agreement FINALIZED and SETTLED end to end.
+## Status: DEPLOYED to GenLayer Studio Network. Full real lifecycle executed and verified on-chain for both profiles — API delivery (negative + positive) and AI-agent delivery (positive + an UNVERIFIABLE/recovery case) — every agreement FINALIZED and SETTLED end to end. A real native-value escrow design was also built, deployed, and live-tested, then deliberately reverted after exposing a fund-lock hazard — see "Native-value escrow: attempted, found unsafe, reverted" below.
 
-## Current deployment (includes the address-coercion fix)
+## Current deployment (bookkeeping-only funding — the safe, final design)
 
 | Field | Value |
 |---|---|
@@ -11,11 +11,11 @@
 | RPC | `https://studio.genlayer.com/api` |
 | Explorer | `https://genlayer-explorer.vercel.app` |
 | Deployer address | `0xaffE15eEc45b68835cc9E5B4Ab85dD5deaE8e70b` (local alias `my-studionet-wallet` — used only to deploy and to fund disposable test accounts, never as a lifecycle party) |
-| **Contract address** | **`0x6bBcF7E85f8F07B54ba53ae2126E2E9F6485eE68`** |
-| Deploy tx hash | `0xfb473764a733d3f0c5aa5049a991515ea6f9dd3488c1deec0c343719a323dc4e` |
-| Deploy tx status | `FINALIZED` |
+| **Contract address** | **`0xD5602E88b021573cbb364Efaae8DCD48DF555ff7`** |
+| Deploy tx hash | `0xdd2f6307a732a43df1ebf1c7bc2683eeb9f8472b4985b3a0cd610c69fc645cb4` |
+| Deploy tx status | `FINALIZED`, unanimous 5-validator `MAJORITY_AGREE` |
 
-Schema readback (`genlayer schema 0x6bBcF7E85f8F07B54ba53ae2126E2E9F6485eE68`) confirms 26 methods matching `contracts/speclock.py` at the deployed commit.
+Schema readback (`genlayer schema 0xD5602E88b021573cbb364Efaae8DCD48DF555ff7`) confirms 27 methods (including the new `check_verdict_consistency` view) matching `contracts/speclock.py`, with `fund_agreement`/`file_appeal` both `payable: false` — the reverted, safe design.
 
 ## A real production defect found and fixed via this deployment (not caught by Direct Mode)
 
@@ -29,9 +29,29 @@ File "/contract.py", line 40, in _as_address
 TypeError: string argument without an encoding
 ```
 
-The genlayer CLI's `addr#...` argument syntax constructs a typed `Address`/bytes value before it ever reaches the contract, which is why every earlier CLI-driven `create_agreement` call (see "Superseded deployments" below) worked. `genlayer-js`'s standard, documented `writeContract` API — a materially different and at least equally official calling convention — passes an address argument as a plain hex string, and `_as_address`'s unconditional `bytes(value)` call cannot handle a `str` without an explicit encoding. **Fixed**: `_as_address` now decodes a `str` input as hex before constructing the `Address`. Regression test: `tests/direct/test_speclock_lifecycle.py::test_provider_as_plain_hex_string_address_is_accepted`. See `DECISION.md` item 7. This contract (deployed at the address above) includes the fix.
+The genlayer CLI's `addr#...` argument syntax constructs a typed `Address`/bytes value before it ever reaches the contract, which is why every earlier CLI-driven `create_agreement` call (see "Superseded deployments" below) worked. `genlayer-js`'s standard, documented `writeContract` API — a materially different and at least equally official calling convention — passes an address argument as a plain hex string, and `_as_address`'s unconditional `bytes(value)` call cannot handle a `str` without an explicit encoding. **Fixed**: `_as_address` now decodes a `str` input as hex before constructing the `Address`. Regression test: `tests/direct/test_speclock_lifecycle.py::test_provider_as_plain_hex_string_address_is_accepted`. See `DECISION.md` item 7.
+
+## Native-value escrow: attempted, found unsafe, reverted
+
+A real-escrow design was built on top of the fix above, using GenVM's documented native-value primitives: `@gl.public.write.payable` + `gl.message.value` to receive a real deposit, and `gl.get_contract_at(recipient).emit_transfer(value=..., on=...)` to pay it back out. It was deployed to `0xaa54c150B128843e5638cF31e2F1B632117ccBE2` and live-tested with two fresh disposable accounts (buyer1 `0xaDFeB5b162415C94edCAeC22eE5207879611F922`, provider1 `0xF24B500CBBEd965e31c47fEc92d8add8C7Cf6E52`).
+
+**The incoming leg genuinely worked.** Calling the payable `fund_agreement` with `value = 1000000000000000000` (1 GEN) succeeded (`SUCCESS`, tx `0x8eeda7767a8c113d2afa0e6180e1588b614a20adf951f99497908fb883043b68`); the contract correctly recorded `funded_amount: "1000000000000000000"`; an independent `getBalance` check on buyer1's wallet before and after the full nine-transaction sequence showed its balance dropped by exactly 1 GEN total (gas on this network costs effectively nothing) — a real, externally-verified deposit, not merely a number the contract believed.
+
+**The outgoing leg failed.** `settle()` correctly computed `released_to_provider: "1000000000000000000"` (tx `0x75b4533880f35352865b88cc1b65a568f6f026d94c4db946376e2ce735f43abe`, `SUCCESS`) and called `emit_transfer` to pay provider1. The resulting child transaction (`getTriggeredTransactionIds` → `0x086c0121ff9d281b9af33198083e72f3e95f20a06fd583d3be82f1eda6fbed54`) reached `status_name: "FINALIZED"` but with `result_name: "NO_MAJORITY"` and `value_credited: false`. Its leader receipt's raw result decodes to the literal string:
+
+```
+Contract 0xF24B500CBBEd965e31c47fEc92d8add8C7Cf6E52 not found
+```
+
+(`node_config.address: "contract_not_found_handler"`). This GenVM runtime's `emit_transfer` appears to require the message recipient to be a deployed GenVM contract, not an ordinary wallet (EOA) address — which is exactly what a real buyer or provider normally is. Follow-up checks after the failed transfer: the deployed contract's own balance was `0`; provider1's balance was unchanged from before settlement; buyer1 had already debited the 1 GEN at the funding step. **The precise final disposition of that 1 GEN was not conclusively established** from the data available — that uncertainty is part of the finding, not resolved away. (It is testnet GEN with no real-world value; the point of concern is the mechanism, not this specific amount.)
+
+**Consequence and decision.** A contract that accepts real deposits but cannot reliably pay them back out is a fund-lock hazard, not a working escrow. Rather than ship it with that risk, the entire real-escrow design (and the appeal-bond design built on the identical `emit_transfer` payout path) was reverted back to bookkeeping-only before the final deployment below. See `DECISION.md` item 8 and the docstrings of `fund_agreement`/`file_appeal`/`_settle`/`resolve_appeal` in `contracts/speclock.py` for the in-code record. This is recorded as a confirmed `BLOCKED_BY_RUNTIME` limitation for capability #3 (native escrow) and capability #29 (economic appeal bonds) in `docs/FEATURE_MATRIX.md` — not as "implemented."
+
+**What would resolve this, if investigated further:** confirmation from GenLayer (docs, support, or a different SDK/runtime version) of the correct mechanism for an Intelligent Contract to pay real native value to a plain wallet address, since no alternative primitive was found in the installed SDK (`genlayer/gl/__init__.py`'s only transfer-capable export is the `ContractProxy`/`get_contract_at` family, which is built around contract-to-contract messaging).
 
 ## How real on-chain lifecycle execution was achieved without touching any protected credential
+
+*(The four agreements below were run against superseded deployment #3, `0x6bBcF7E85f8F07B54ba53ae2126E2E9F6485eE68`, before the escrow attempt/revert — all application logic involved is identical in the final deployment; only the payable/bond wrapping around `fund_agreement`/`file_appeal` changed.)*
 
 The `genlayer` CLI's `--args` parser cannot encode a digit-only string (background below), which blocked every agreement-addressed call through that tool. Investigation of GenLayer's **officially documented `genlayer-js` SDK** (a separately published npm package, the same library underlying the CLI) confirmed its `args` arrays pass native JavaScript values straight into the real calldata encoder with no intervening text-parsing step — a JS string `"2"` stays the string `"2"`. Verified empirically: `readContract` successfully read agreements by their real string ids with no issue.
 
@@ -129,9 +149,13 @@ This correctly exercised the `settle()` branch that never auto-awards disputed p
 
 Full tx chain for "6": `create_agreement` `0x40e3197c532798b4725754ba20b40f7e0c3c556cf33c1cc6fb8f6f4114fe512b` → `accept_agreement` `0xf2c23f8253a224e4ae888ab24467e67902aefbf0dad3980157a9b5e29dfe6ce1` → `fund_agreement` `0xb61de8cbf0d3d2b6f7663aba9e8b24017b668e6e3b4a88fbe4f56c4830f86948` → `freeze_agreement` `0xdd32d4b3ad3cff4ffb801b894adb029999c3c26ab714cb6b1930e79512434c57` → `submit_evidence` `0x9547f02df4db1aaa677c7eef628127989b79bfa78619b3af887ebc020ef2d4fe` → `request_evaluation` `0xc2a7b4d8e4510408816feda9d4c9736f0425aaae3735f85cf4bb742f6e8af331` → `finalize_verdict` ×2 `0x7fe57df5e0e3b1dfe1a475fc764aa8505d40f37fd506e0b0ba88c8c75ef46f2c`, `0x84406fd7dac524a0d836a3838ba1e98ad749f3a66f2e90002d95d9630cc610b7` → `settle` `0x1e249fc6aa934be8f0cb79f87f3f2e080205032628b1d682e797ea326d955067`. All `SUCCESS`.
 
-## Not yet exercised on this deployment
+## check_verdict_consistency — live, verified, zero risk
 
-`file_appeal`/`resolve_appeal` were not exercised against this deployment (no appeal was filed on any of agreements `"2"`, `"4"`, `"5"`, `"6"`) and `recover_inconclusive` was not called to complete agreement `"6"`'s refund. Both are already covered by Direct Mode tests.
+The standalone consistency-auditor view (capability 28) was exercised live as a read-only call against agreement `"2"` on the escrow-test deployment (`0xaa54c150B128843e5638cF31e2F1B632117ccBE2`, prior to its revert — view behavior is unaffected by the escrow revert since it never touches value): `check_verdict_consistency("2")` returned `{"agreement_id":"2","any_contradiction_detected":false,"changed_criteria":[],"findings_by_criterion":{"c1":[{"evaluation_id":"2-eval1","finding":"PASS","round":1}]},"total_rounds":1}` — correct, since that agreement never went through an appeal round.
+
+## Not yet exercised on the final (current) deployment
+
+`file_appeal`/`resolve_appeal` and `recover_inconclusive` were exercised live on the *escrow-test* deployment (superseded) and in Direct Mode, but not yet re-run against the final bookkeeping-only deployment at `0xD5602E88b021573cbb364Efaae8DCD48DF555ff7` above. The application logic is identical (only the payable/bond wrapping was removed), and all of it is covered by the 44 passing Direct Mode tests; a live re-run would be a repeat of evidence already gathered on the prior deployments, not new information.
 
 ## The `genlayer` CLI's `--args` tooling defect (background, for context)
 
@@ -147,15 +171,17 @@ Three attempts to route around this *within the CLI itself* (reading a keychain-
 
 ## Funds / escrow
 
-**NON-CUSTODIAL / NOT VERIFIED, still.** `fund_agreement` records an integer `funded_amount` as contract storage bookkeeping; no native-value transfer, payable method, or balance check against `gl.message.value` was implemented or exercised. All GEN transfers in this session (deployer → disposable test accounts) were ordinary wallet-to-wallet transfers to cover gas, never calls through the contract. The real settlement read-backs above (`refunded_to_buyer`/`released_to_provider: 1000`) are bookkeeping numbers recorded by the contract, not native-value payments — do not read them as proof of fund custody.
+**NON-CUSTODIAL / NOT VERIFIED — and now backed by a real failed attempt, not just an untried gap.** `fund_agreement` records an integer `funded_amount` as contract storage bookkeeping; no native-value transfer, payable method, or balance check against `gl.message.value` is live in the final deployment. This was tried for real (see "Native-value escrow: attempted, found unsafe, reverted" above): incoming deposits worked, outgoing payouts to a plain wallet address did not (`NO_MAJORITY`, `"Contract ... not found"`). All GEN transfers in this session apart from that one escrow test (deployer → disposable test accounts) were ordinary wallet-to-wallet transfers to cover gas, never calls through the contract. The real settlement read-backs in this document (`refunded_to_buyer`/`released_to_provider`) are bookkeeping numbers recorded by the contract, not native-value payments — do not read them as proof of fund custody.
 
 ## Superseded deployments (kept for history — do not use for further testing)
 
 1. `0xDa62645C8d904e1cE11BEc4F359cA20971092536` (deploy tx `0x518e5f5e14f584138532921b4562559d40f00d322604e435458a91c47241f016`, `FINALIZED`). Predates the agent-evidence-fetch fix.
 2. `0x713036220DE89a077fea1C3203C2510adB67f992` (deploy tx `0x2d47c50857bd2234e85615f778f7e62d54e377b4f418132a6e5aee022ef65f6d`, `FINALIZED`). Includes the agent-evidence-fetch fix but predates the `_as_address` hex-string fix, so `create_agreement` could not be called through `genlayer-js`'s standard API on it. Three agreements exist on it (`"1"`, `"2"`, `"3"`), all stuck in `DRAFT` since nothing could sign a subsequent call against them through a supported interface.
+3. `0x6bBcF7E85f8F07B54ba53ae2126E2E9F6485eE68` (deploy tx `0xfb473764a733d3f0c5aa5049a991515ea6f9dd3488c1deec0c343719a323dc4e`, `FINALIZED`). Includes the `_as_address` fix; this is the deployment all four complete API/agent lifecycle agreements (`"2"`, `"4"`, `"5"`, `"6"`) above were run against. Predates the native-escrow attempt and its revert — functionally equivalent to the final deployment except it lacks `check_verdict_consistency`.
+4. `0xaa54c150B128843e5638cF31e2F1B632117ccBE2` (deploy tx `0x62d7d3d603c9c861f2cfc56dc5c7ca1ee5b94de043dfeac4482c3f72f4ba1dc2`, `FINALIZED`). The escrow-test deployment — real payable `fund_agreement`/`file_appeal`, real `emit_transfer` payouts. Contains agreement `"2"` with a real deposit (1 GEN) permanently stuck in an unresolved state per the escrow finding above. Do not use for anything other than historical reference to that finding.
 
 All remain live on-chain (nothing can be un-deployed).
 
 ## Source/commit record
 
-Current deployment's source includes: the mutual-consent clock redesign, the appeal-resolution precision fix, the aggregate-attribution fix, the agent-evidence-fetch fix, and the `_as_address` hex-string fix. If the contract source changes again, this document and the deployment must be treated as stale together, per the brief's "any source fix invalidates prior deployment-source evidence" rule.
+Current deployment's source includes: the mutual-consent clock redesign, the appeal-resolution precision fix, the aggregate-attribution fix, the agent-evidence-fetch fix, the `_as_address` hex-string fix, and `check_verdict_consistency` — with native-value escrow and appeal bonds deliberately built, tested, and reverted (see above) rather than shipped. If the contract source changes again, this document and the deployment must be treated as stale together, per the brief's "any source fix invalidates prior deployment-source evidence" rule.
