@@ -56,4 +56,4 @@ The lifecycle beyond `create_agreement` — `accept_agreement`, `fund_agreement`
 
 ## Source/commit record
 
-Deployed from commit `fff8095`. If the contract source changes after this point, this document and the deployment must be treated as stale together (redeploy and update both), per the brief's "any source fix invalidates prior deployment-source evidence" rule.
+Deployed from commit `fff8095`. **The contract source has since changed** (the `_judge_agent_criterion` evidence-fetching fix, `docs/FEATURE_MATRIX.md` #5) — per the brief's "any source fix invalidates prior deployment-source evidence" rule, the deployment above is now stale with respect to the current `contracts/speclock.py` and must be treated as such: the live contract at `0xDa62645C8d904e1cE11BEc4F359cA20971092536` still runs the metadata-only agent judge. The deploy and `create_agreement` evidence recorded above remain valid as evidence of *those specific transactions*, but a fresh deployment is needed before the agent profile's live behavior matches the current source. Not redeployed in this pass pending the repository owner's go-ahead (redeploying abandons the current address and costs gas).

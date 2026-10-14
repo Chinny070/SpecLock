@@ -126,3 +126,49 @@ def test_multiple_urls_same_control_not_auto_independent(direct_vm, direct_deplo
     evaluation_id = contract.request_evaluation(agreement_id)
     evaluation = contract.get_evaluation(evaluation_id)
     assert evaluation["findings"][0]["sufficiency"] == "INSUFFICIENT"
+
+
+def test_agent_judge_actually_fetches_and_includes_real_evidence_content(direct_vm, direct_deploy, direct_alice, direct_bob):
+    """Regression test for a real gap found while preparing a live Studionet
+    demo: an earlier revision of _judge_agent_criterion never fetched the
+    evidence URL at all, passing only {url, digest} metadata to the LLM. The
+    mock_llm prompt-pattern match only succeeds if the real fetched body
+    text below appears in the prompt handed to gl.nondet.exec_prompt, so
+    this fails against the old (metadata-only) implementation and passes
+    against the fixed one."""
+    contract = direct_deploy(CONTRACT)
+    agreement_id = _setup_frozen_agent_agreement(contract, direct_vm, direct_alice, direct_bob)
+    _submit(contract, direct_vm, direct_bob, agreement_id, "https://artifacts.example.com/summary.txt")
+
+    unique_marker = "UNIQUE-MARKER-57f3a9-this-text-must-reach-the-llm-prompt"
+    direct_vm.mock_web(r".*artifacts\.example\.com/summary\.txt.*", {"status": 200, "body": f"Summary content. {unique_marker}"})
+    direct_vm.mock_llm(
+        rf".*{unique_marker}.*",
+        json.dumps({"finding": "PASS", "sufficiency": "SUFFICIENT", "rationale": "Real fetched content was present and reviewed."}),
+    )
+
+    direct_vm.sender = direct_bob
+    evaluation_id = contract.request_evaluation(agreement_id)
+    evaluation = contract.get_evaluation(evaluation_id)
+    assert evaluation["overall_finding"] == "PASS"
+
+
+def test_agent_unreachable_evidence_fetch_does_not_crash_judgment(direct_vm, direct_deploy, direct_alice, direct_bob):
+    """If an evidence URL can't be fetched, judge() must still run (the LLM
+    sees reachable=False and an empty excerpt) rather than raising -- the
+    contract should never crash a whole evaluation because one evidence URL
+    went down."""
+    contract = direct_deploy(CONTRACT)
+    agreement_id = _setup_frozen_agent_agreement(contract, direct_vm, direct_alice, direct_bob)
+    _submit(contract, direct_vm, direct_bob, agreement_id, "https://artifacts.example.com/summary.txt")
+
+    direct_vm.mock_web(r".*artifacts\.example\.com/summary\.txt.*", {"status": 503, "body": ""})
+    direct_vm.mock_llm(
+        r".*adjudicating.*",
+        json.dumps({"finding": "UNVERIFIABLE", "sufficiency": "UNVERIFIABLE", "rationale": "Evidence source was unreachable at evaluation time."}),
+    )
+
+    direct_vm.sender = direct_bob
+    evaluation_id = contract.request_evaluation(agreement_id)
+    evaluation = contract.get_evaluation(evaluation_id)
+    assert evaluation["overall_finding"] == "UNVERIFIABLE"
