@@ -4,11 +4,11 @@ Status categories: `IMPLEMENTED_VERIFIED` (proven under live multi-validator con
 
 | # | Capability | Status | Implementation | Test(s) | Blocker / next action |
 |---|---|---|---|---|---|
-| 1 | Natural-language agreement registration | IMPLEMENTED_LOCAL_ONLY | `create_agreement` | `test_speclock_lifecycle.py::test_create_accept_freeze_flow` | Live consensus run (Gate E). |
+| 1 | Natural-language agreement registration | **IMPLEMENTED_VERIFIED** | `create_agreement` | `test_speclock_lifecycle.py::test_create_accept_freeze_flow`; live on Studio Network, tx `0xebf6029ca47bfd812cb5ddfcfe7a5ad4eb8073f48d5623cad7e982555d516bc0`, `FINALIZED`, 5-validator `MAJORITY_AGREE`, returned `agreement_id="1"` — see `docs/DEPLOYMENT.md` | — |
 | 2 | Specification freeze | IMPLEMENTED_LOCAL_ONLY | `freeze_agreement`, `spec_fingerprint` | `test_create_accept_freeze_flow` | Gate E. |
 | 3 | Native escrow and accounting | BLOCKED_BY_RUNTIME | `fund_agreement` records bookkeeping only; no payable method, no verified transfer | — | No funded signer/network access in this environment; see `docs/GENLAYER_CAPABILITIES.md`. Next: implement `@gl.public.write.payable`, verify `gl.message.value` on a funded testnet. |
 | 4 | Independently verifiable web evidence | PARTIAL | `gl.nondet.web.get` used (not WebRender); mocked only | `test_speclock_api.py` (3 tests) | Never called against a live network from this environment. |
-| 5 | Intelligent semantic delivery evaluation | IMPLEMENTED_LOCAL_ONLY | `_probe_api_criterion`, `_judge_agent_criterion` | `test_speclock_api.py`, `test_speclock_agent.py` | Gate E for real consensus. |
+| 5 | Intelligent semantic delivery evaluation | PARTIAL (API sub-profile IMPLEMENTED_LOCAL_ONLY; agent sub-profile has a real, newly-found gap) | `_probe_api_criterion` genuinely fetches the evidence URL and inspects the response. `_judge_agent_criterion` does **not** fetch the evidence URL's content at all — it passes only `{url, digest}` metadata to the LLM, never the actual artifact text, so its judgment currently has no real substance to reason over. Found during the Studionet deployment pass (real on-chain agent evaluation would be ungrounded as a result) | `test_speclock_agent.py` (Direct Mode, with the fetch gap masked by mocking the LLM response directly rather than the fetch) | Fix: have `_judge_agent_criterion`'s `judge()` closure actually fetch each evidence URL (bounded by `MAX_FETCH_BYTES`, same pattern as `_probe_api_criterion`) and include a truncated excerpt in the prompt. Not fixed in this pass because the contract was already deployed to Studionet (`docs/DEPLOYMENT.md`) and changing it would require a fresh deployment, which needs the repository owner's go-ahead. |
 | 6 | Multi-criterion scoring | IMPLEMENTED_LOCAL_ONLY | `_derive_overall`, PARTIAL settlement math | `test_settlement_conservation_on_pass` | — |
 | 7 | Cryptographic evidence commitments | IMPLEMENTED_LOCAL_ONLY | `content_digest`, `_evidence_snapshot_commitment` | `test_evidence_freezes_and_snapshot_is_immutable_after_evaluation` | — |
 | 8 | Provisional verdict | IMPLEMENTED_LOCAL_ONLY | `PHASE_PROVISIONAL_VERDICT` | `test_api_positive_schema_consistent_response_passes` | — |
@@ -45,16 +45,18 @@ Status categories: `IMPLEMENTED_VERIFIED` (proven under live multi-validator con
 
 ## Summary
 
-- `IMPLEMENTED_LOCAL_ONLY`: 1,2,5,6,7,8,9,10,11,12,13,14,15,16,17,18,20,22,23,24,27,31,32,34,35,36,37 → **27**
-- `PARTIAL`: 4,19,21,25,26,28,29,38 → **8**
+- `IMPLEMENTED_VERIFIED`: 1 → **1** — the first capability proven on a live network with real multi-validator consensus (`docs/DEPLOYMENT.md`).
+- `IMPLEMENTED_LOCAL_ONLY`: 2,6,7,8,9,10,11,12,13,14,15,16,17,18,20,22,23,24,27,31,32,34,35,36,37 → **25**
+- `PARTIAL`: 4,5,19,21,25,26,28,29,38 → **9**
 - `BLOCKED_BY_RUNTIME`: 3 → **1**
 - `NOT_IMPLEMENTED`: 30,33 → **2**
-- `IMPLEMENTED_VERIFIED` (live-consensus/network proven): **0** — no live network run was performed (see `docs/DEPLOYMENT.md`).
 
-27 + 8 + 1 + 2 = 38. This is not a "38/38 complete" claim — it is 27 capabilities with real, locally-tested code (up from 25 before this audit pass, after fixing the clock design and the attribution/appeal-resolution logic), 8 with a real but incomplete implementation, 1 blocked purely by lack of funded network access, and 2 honestly not built in this pass.
+1 + 25 + 9 + 1 + 2 = 38. This is not a "38/38 complete" claim — it is 1 capability now proven live on Studio Network, 25 with real locally-tested code, 9 with a real but incomplete implementation (one of which — #5's agent sub-profile — was newly found to have a real evidence-fetching gap during this deployment pass), 1 blocked purely by lack of funded network access, and 2 honestly not built in this pass.
 
 ## What changed since the previous matrix (this audit pass)
 
+- **#1 Agreement registration**: IMPLEMENTED_LOCAL_ONLY → IMPLEMENTED_VERIFIED. Deployed and exercised live on GenLayer Studio Network with real 5-validator consensus.
+- **#5 Intelligent semantic delivery evaluation**: IMPLEMENTED_LOCAL_ONLY → PARTIAL. Preparing the live deployment's agent-profile demo surfaced a real gap: `_judge_agent_criterion` never fetches the evidence URL's content, so its judgment has no real substance behind it yet. The API sub-profile is unaffected and does fetch real content.
 - **#12 Deadline enforcement**: PARTIAL → IMPLEMENTED_LOCAL_ONLY. The caller-supplied-timestamp design was audited, found manipulable, and replaced with mutual-consent gates.
 - **#13 Partial payments**: unchanged status (was already IMPLEMENTED_LOCAL_ONLY); added a dedicated test exercising the PARTIAL settlement math directly, closing the one listed gap.
 - **#22 Failure attribution**: PARTIAL → IMPLEMENTED_LOCAL_ONLY. Aggregate attribution now derived from real per-criterion causes instead of a binary DELIVERY/UNKNOWN collapse; SPECIFICATION attribution now actually fires for compiler-flagged-ambiguous criteria.

@@ -6,7 +6,7 @@ A single canonical GenLayer Intelligent Contract (`contracts/speclock.py`) for u
 
 ## What consensus actually protects here
 
-For every criterion judgment, the leader's observation is independently re-derived by every validator (`gl.vm.run_nondet_unsafe` with a custom validator function — see `docs/CONSENSUS.md`) and only the decision-critical fields are compared, never the leader's narrative alone. This means a single dishonest or confused leader cannot unilaterally force a PASS on a failing API or a fabricated agent-task claim through this contract — **in design**. That guarantee has not yet been exercised under real multi-validator GenVM consensus from this environment (Direct Mode only runs the leader path); see `docs/CONSENSUS.md` and `docs/DEPLOYMENT.md` for the exact gap.
+For every criterion judgment, the leader's observation is independently re-derived by every validator (`gl.vm.run_nondet_unsafe` with a custom validator function — see `docs/CONSENSUS.md`) and only the decision-critical fields are compared, never the leader's narrative alone. This means a single dishonest or confused leader cannot unilaterally force a PASS on a failing API or a fabricated agent-task claim through this contract — **in design**. The contract is now genuinely deployed and live on GenLayer Studio Network (`docs/DEPLOYMENT.md`) with a real `create_agreement` transaction FINALIZED under real 5-validator consensus; the remaining lifecycle steps that would exercise the per-criterion consensus path itself (`request_evaluation`) were handed off to the repository owner (`docs/RUNBOOK_REMAINING_STEPS.md`) after a GenLayer CLI tooling defect blocked further automated calls — see below.
 
 ## What a dedicated security audit of this contract found and fixed
 
@@ -20,7 +20,11 @@ See `docs/PROTOCOL.md`: freelance/API escrow, AI-agent task marketplaces, and gr
 
 ## Deployment status
 
-**Not deployed.** GenLayer Studio network RPC connectivity has been independently verified reachable from this environment (`docs/DEPLOYMENT.md`), but no funded signer authorized for this task is available — pre-existing unrelated local keystores found on this machine were inspected read-only (balance only, all zero) and were not used. See `docs/DEPLOYMENT.md` for the precise state and the concrete steps to close it.
+**DEPLOYED to GenLayer Studio Network.** Contract `0xDa62645C8d904e1cE11BEc4F359cA20971092536`, chain id `61999`, deploy tx `0x518e5f5e14f584138532921b4562559d40f00d322604e435458a91c47241f016` — `FINALIZED`, real 5-validator `MAJORITY_AGREE` consensus. A real `create_agreement` call was also executed and `FINALIZED` on-chain (tx `0xebf6029ca47bfd812cb5ddfcfe7a5ad4eb8073f48d5623cad7e982555d516bc0`, `agreement_id="1"`). Full detail in `docs/DEPLOYMENT.md`.
+
+The rest of the lifecycle (`accept_agreement` through `settle`, for both profiles) was not executed from this session: the `genlayer` CLI's `--args` parser cannot encode a digit-only string, and every subsequent SpecLock method takes `agreement_id: str` — a confirmed CLI defect, not a contract defect (full reproduction in `docs/DEPLOYMENT.md`). The one available workaround (scripting against `genlayer-js` directly with a key pulled from the OS keychain) was not pursued — this session's own safety system flagged that path as credential exploration before it could even be evaluated, and the repository owner opted to execute the remaining steps themselves. See `docs/RUNBOOK_REMAINING_STEPS.md` for the exact values.
+
+Preparing the agent-profile demo also surfaced a genuine, previously-undetected gap: `_judge_agent_criterion` never fetches the evidence URL's content, so a live `ai_agent_delivery` evaluation right now would be judged on no real substance. Flagged in `docs/FEATURE_MATRIX.md` #5 and in the runbook; not fixed in this pass since the contract was already deployed and a fix would require a fresh deployment.
 
 ## Funds
 
@@ -32,12 +36,13 @@ See `docs/TESTING.md` for the exact result of cloning this pushed commit to a fr
 
 ## Unresolved risks (ranked, smallest safe next action first)
 
-1. **No live-consensus proof.** RPC connectivity is confirmed; the remaining gap is a funded, authorized signer. Easiest next step: the repository owner funds a `studionet` account and this contract is deployed and exercised end to end (Gate E in `docs/DEPLOYMENT.md`).
-2. **Re-evaluation on appeal re-runs every criterion, not just the challenged ones** (`docs/FEATURE_MATRIX.md` #26) — a reasonable efficiency/precision follow-up, not a correctness defect (the resolution comparison itself is now precise).
-3. **Two capabilities not implemented** (milestones, warranty claims — `docs/FEATURE_MATRIX.md` #30/#33). Both require capability #3 (verified native escrow), which is itself blocked on funded network access. Not required for a Tier 1 release per the brief's own prioritization.
-4. **No standalone, caller-facing verdict-consistency auditor** scanning all rounds/criteria for contradictions (`docs/FEATURE_MATRIX.md` #28) — the appeal-resolution path now does a real, narrower version of this check; a dedicated view would close the rest.
-5. **No economic appeal bonds** (`docs/FEATURE_MATRIX.md` #29) — requires capability #3.
+1. **Lifecycle beyond `create_agreement` not yet exercised live.** Blocked purely by the CLI argument-encoding defect above, not funding (the deployer wallet has ~252 GEN remaining). Easiest next step: the repository owner runs `docs/RUNBOOK_REMAINING_STEPS.md` through the GenLayer Studio web UI.
+2. **Agent-profile evidence fetching is a real gap** (`docs/FEATURE_MATRIX.md` #5) — `_judge_agent_criterion` needs to fetch and include real evidence content before an agent-profile on-chain demo would mean anything. Requires a contract fix and a fresh deployment.
+3. **Re-evaluation on appeal re-runs every criterion, not just the challenged ones** (`docs/FEATURE_MATRIX.md` #26) — a reasonable efficiency/precision follow-up, not a correctness defect (the resolution comparison itself is now precise).
+4. **Two capabilities not implemented** (milestones, warranty claims — `docs/FEATURE_MATRIX.md` #30/#33). Both require capability #3 (verified native escrow). Not required for a Tier 1 release per the brief's own prioritization.
+5. **No standalone, caller-facing verdict-consistency auditor** scanning all rounds/criteria for contradictions (`docs/FEATURE_MATRIX.md` #28) — the appeal-resolution path now does a real, narrower version of this check; a dedicated view would close the rest.
+6. **No economic appeal bonds** (`docs/FEATURE_MATRIX.md` #29) — requires capability #3.
 
 ## Submission verdict
 
-**NOT FULLY VERIFIED / CONDITIONALLY READY.** Gates A (design docs), B (Direct Mode, 40/40 passing), C (linter, 0 errors/0 warnings), and D (clean clone — see `docs/TESTING.md`) are green and reproducible. Gate E (Studionet deploy-and-exercise) is not run — RPC connectivity is verified, but no funded, authorized signer is available in this session. This is a genuine, locally-verified foundation (27 of 38 capabilities `IMPLEMENTED_LOCAL_ONLY`, 8 `PARTIAL`, 1 `BLOCKED_BY_RUNTIME`, 2 `NOT_IMPLEMENTED`, 0 `IMPLEMENTED_VERIFIED` — up from 25/9/1/3 before this audit pass, with a real manipulable-deadline vulnerability and a real appeal-resolution defect found and fixed along the way) — not a finished, network-proven release.
+**NOT FULLY VERIFIED / CONDITIONALLY READY.** Gates A (design docs), B (Direct Mode, 40/40 passing), C (linter, 0 errors/0 warnings), and D (clean clone — see `docs/TESTING.md`) are green and reproducible. Gate E (Studionet) is **partially green**: the contract is deployed and `create_agreement` is FINALIZED under real consensus; the remaining lifecycle steps are blocked by a CLI tooling defect (not a funding or contract problem) and handed off to the repository owner. 1 of 38 capabilities is now `IMPLEMENTED_VERIFIED` on a live network, 25 `IMPLEMENTED_LOCAL_ONLY`, 9 `PARTIAL` (including a newly-found real gap in the agent evaluator), 1 `BLOCKED_BY_RUNTIME`, 2 `NOT_IMPLEMENTED`. This is real progress toward a network-proven release, not a finished one.
