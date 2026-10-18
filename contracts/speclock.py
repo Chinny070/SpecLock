@@ -241,6 +241,24 @@ def _validate_url(url: str) -> None:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} blocked host for evidence URL")
 
 
+def _evidence_host(url: str) -> str:
+    """Return the normalized host for a conservative corroboration check.
+
+    This only establishes different host strings, not different ownership or
+    administrative control. The contract therefore treats host diversity as
+    a minimum signal, never as proof of source independence.
+    """
+    match = re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://([^/?#]+)", url)
+    if not match:
+        return ""
+    authority = match.group(1).lower()
+    if authority.startswith("[") and "]" in authority:
+        host = authority[1:authority.index("]")]
+    else:
+        host = authority.rsplit(":", 1)[0] if ":" in authority else authority
+    return host.rstrip(".")
+
+
 def _parse_json_strict(text: str, max_chars: int) -> dict:
     if len(text) > max_chars:
         raise gl.vm.UserError(f"{ERROR_LLM} response exceeded {max_chars} chars")
@@ -480,6 +498,20 @@ class SpecLock(gl.Contract):
         current = int(self.claimable[key]) if key in self.claimable else 0
         self.claimable[key] = u256(current + int(atto))
 
+    def _refund_rejected_value(self, sender: Address, amount: int) -> None:
+        """Turn value attached to a rejected payable call into a pull refund.
+
+        Studionet evidence shows a payable call can have
+        `value_credited: true` even when a later `UserError` rolls back its
+        storage writes. Raising after value arrives can therefore strand real
+        GEN in the contract. Rejected calls with value must succeed as a
+        no-op plus a caller-owned claimable credit; callers can recover it via
+        `withdraw()`. Calls rejected with zero value may still raise normally.
+        """
+        if int(amount) > 0:
+            self.value_in_total = u256(int(self.value_in_total) + int(amount))
+            self._credit(sender, amount)
+
     def _next_seq(self) -> int:
         """Purely contract-internal monotonic counter for audit-trail
         ordering. No caller input feeds this value at all — it cannot be
@@ -614,7 +646,7 @@ class SpecLock(gl.Contract):
         self.agreements[agreement_id] = agreement
 
     @gl.public.write.payable
-    def fund_agreement(self, agreement_id: str, amount: int) -> None:
+    def fund_agreement(self, agreement_id: str, amount: int) -> bool:
         """Real native-value escrow. The buyer must send `gl.message.value`
         equal to the declared `amount` — the amount is still an explicit
         parameter (rather than inferred solely from the sent value) so a
@@ -625,17 +657,25 @@ class SpecLock(gl.Contract):
         party's `claimable` balance, and that party calls `withdraw()`
         themselves to receive the real native-value payout. See the module
         docstring, `_settle`, and `withdraw`."""
-        agreement = self._get_agreement(agreement_id)
-        self._require(agreement.phase == PHASE_ACCEPTED, "agreement must be ACCEPTED before funding")
         caller = gl.message.sender_address
-        self._require(caller == agreement.buyer, "only the buyer can fund")
-        self._require(amount > 0, "funded amount must be positive")
         sent = int(gl.message.value)
-        self._require(sent == amount, f"sent value ({sent}) must match declared amount ({amount})")
+        if agreement_id not in self.agreements:
+            if sent > 0:
+                self._refund_rejected_value(caller, sent)
+                return False
+            self._require(False, "unknown agreement_id")
+        agreement = self.agreements[agreement_id]
+        if (agreement.phase != PHASE_ACCEPTED or caller != agreement.buyer
+                or amount <= 0 or sent <= 0 or sent != amount):
+            if sent > 0:
+                self._refund_rejected_value(caller, sent)
+                return False
+            self._require(False, "funding requires the buyer, ACCEPTED phase, and matching positive value")
         self.value_in_total = u256(int(self.value_in_total) + sent)
         agreement.funded_amount = u256(amount)
         agreement.phase = PHASE_FUNDED
         self.agreements[agreement_id] = agreement
+        return True
 
     @gl.public.write
     def enable_warranty(self, agreement_id: str, warranty_bps: int) -> None:
@@ -996,7 +1036,7 @@ class SpecLock(gl.Contract):
 
     # ---- API delivery profile (capability: section 4 "API delivery") ----
 
-    def _evaluate_api_profile(self, criteria: list, evidence_recs: list) -> dict:
+    def _evaluate_api_profile(self, criteria: list, evidence_recs: list, enforce_digest: bool = False) -> dict:
         findings = []
         for c in criteria:
             probe_evidence = [e for e in evidence_recs if c["id"] in e.metadata_json]
@@ -1015,7 +1055,9 @@ class SpecLock(gl.Contract):
             # is what makes request_resubmission's corrective evidence actually
             # take effect on re-evaluation, rather than always re-probing the
             # first (possibly stale/wrong) evidence ever submitted.
-            finding, sufficiency, rationale, attribution = self._probe_api_criterion(c, probe_evidence[-1])
+            finding, sufficiency, rationale, attribution = self._probe_api_criterion(
+                c, probe_evidence[-1], enforce_digest=enforce_digest
+            )
             findings.append(
                 {
                     "criterion_id": c["id"],
@@ -1027,7 +1069,7 @@ class SpecLock(gl.Contract):
             )
         return {"findings": findings}
 
-    def _probe_api_criterion(self, criterion: dict, evidence: "EvidenceReceipt") -> tuple:
+    def _probe_api_criterion(self, criterion: dict, evidence: "EvidenceReceipt", enforce_digest: bool = False) -> tuple:
         """Reachability vs functional correctness (never collapse a 200 into
         delivery). Uses a custom independently-executed validator: every
         validator refetches the same URL and independently derives
@@ -1045,8 +1087,9 @@ class SpecLock(gl.Contract):
                 return {"reachable": False, "functional": False, "status": None}
             status = getattr(res, "status", None)
             if status is None or status >= 500:
-                return {"reachable": False, "functional": False, "status": status}
+                return {"reachable": False, "functional": False, "status": status, "digest_matches": False}
             body = getattr(res, "body", b"")
+            digest_matches = hashlib.sha256(body).hexdigest() == evidence.content_digest.lower()
             if len(body) > MAX_FETCH_BYTES:
                 body = body[:MAX_FETCH_BYTES]
             reachable = status is not None and status < 500
@@ -1058,7 +1101,7 @@ class SpecLock(gl.Contract):
                     functional = isinstance(payload, (dict, list)) and ("schema" not in expects or bool(payload))
                 except Exception:
                     functional = False
-            return {"reachable": reachable, "functional": functional, "status": status}
+            return {"reachable": reachable, "functional": functional, "status": status, "digest_matches": digest_matches}
 
         def validator_fn(leaders_res) -> bool:
             if not isinstance(leaders_res, gl.vm.Return):
@@ -1068,6 +1111,7 @@ class SpecLock(gl.Contract):
             return (
                 leader_view.get("reachable") == validator_view.get("reachable")
                 and leader_view.get("functional") == validator_view.get("functional")
+                and (not enforce_digest or leader_view.get("digest_matches") == validator_view.get("digest_matches"))
             )
 
         try:
@@ -1077,13 +1121,15 @@ class SpecLock(gl.Contract):
 
         if not observation.get("reachable"):
             return FINDING_UNVERIFIABLE, SUFFICIENCY_UNVERIFIABLE, "endpoint unreachable at evaluation time", ATTRIBUTION_EXTERNAL
+        if enforce_digest and not observation.get("digest_matches"):
+            return FINDING_UNVERIFIABLE, SUFFICIENCY_UNVERIFIABLE, "fetched evidence does not match the committed digest", ATTRIBUTION_EVIDENCE
         if observation.get("functional"):
             return FINDING_PASS, SUFFICIENCY_SUFFICIENT, f"HTTP {observation.get('status')} with schema-consistent body", ATTRIBUTION_UNKNOWN
         return FINDING_FAIL, SUFFICIENCY_SUFFICIENT, f"HTTP {observation.get('status')} but response failed functional check", ATTRIBUTION_DELIVERY
 
     # ---- AI-agent delivery profile (capability: section 4 "AI-agent delivery") ----
 
-    def _evaluate_agent_profile(self, criteria: list, evidence_recs: list) -> dict:
+    def _evaluate_agent_profile(self, criteria: list, evidence_recs: list, enforce_digest: bool = False) -> dict:
         findings = []
         for c in criteria:
             matching = [e for e in evidence_recs if c["id"] in e.metadata_json]
@@ -1098,7 +1144,9 @@ class SpecLock(gl.Contract):
                     }
                 )
                 continue
-            finding, sufficiency, rationale, attribution = self._judge_agent_criterion(c, matching)
+            finding, sufficiency, rationale, attribution = self._judge_agent_criterion(
+                c, matching, enforce_digest=enforce_digest
+            )
             findings.append(
                 {
                     "criterion_id": c["id"],
@@ -1110,7 +1158,7 @@ class SpecLock(gl.Contract):
             )
         return {"findings": findings}
 
-    def _fetch_agent_evidence_excerpt(self, url: str) -> dict:
+    def _fetch_agent_evidence_excerpt(self, url: str, expected_digest: str = "") -> dict:
         """Independently fetch one evidence artifact's real content, bounded
         by MAX_FETCH_BYTES on the raw response and MAX_AGENT_EXCERPT_CHARS on
         the text handed to the LLM. Called identically by the leader and by
@@ -1132,14 +1180,18 @@ class SpecLock(gl.Contract):
             return {"url": url, "reachable": False, "excerpt": "", "error": f"fetch failed: {exc}"}
         status = getattr(res, "status", None)
         if status is None or status >= 400:
-            return {"url": url, "reachable": False, "excerpt": "", "error": f"HTTP {status}"}
+            return {"url": url, "reachable": False, "excerpt": "", "error": f"HTTP {status}", "digest_matches": False}
         body = getattr(res, "body", b"")
+        digest_matches = (
+            hashlib.sha256(body).hexdigest() == expected_digest.lower()
+            if expected_digest and len(body) <= MAX_FETCH_BYTES else (None if not expected_digest else False)
+        )
         if len(body) > MAX_FETCH_BYTES:
             body = body[:MAX_FETCH_BYTES]
         text = body.decode("utf-8", errors="replace")[:MAX_AGENT_EXCERPT_CHARS]
-        return {"url": url, "reachable": True, "excerpt": text, "error": ""}
+        return {"url": url, "reachable": True, "excerpt": text, "error": "", "digest_matches": digest_matches}
 
-    def _judge_agent_criterion(self, criterion: dict, evidences: list) -> tuple:
+    def _judge_agent_criterion(self, criterion: dict, evidences: list, enforce_digest: bool = False) -> tuple:
         """Capability 5/21: a self-reported trace is never independent proof
         by itself. The leader judgment is rerun by every validator
         (comparative equivalence over the decision-critical field) against
@@ -1148,23 +1200,34 @@ class SpecLock(gl.Contract):
         independently re-fetches each evidence artifact's real content
         (`_fetch_agent_evidence_excerpt`) rather than judging from a bare
         URL/digest pair."""
-        urls = [e.url for e in evidences]
-        digests_by_url = {e.url: e.content_digest for e in evidences}
         # Capability 19: a deterministic independence pre-check, computed
         # identically by the leader and every validator from the same frozen
         # evidence records (never from the nondet LLM call itself, so it
         # cannot introduce a new equivalence-comparison risk). Multiple
         # evidence items submitted by a single party are not independent
-        # corroboration no matter what the model concludes, so a model
-        # claiming SUFFICIENT in that case is deterministically downgraded
-        # rather than trusted at face value.
+        # corroboration no matter what the model concludes. Requiring only
+        # different submitters would still let them repeat the same host;
+        # requiring only different hosts would let one party manufacture
+        # multiple endpoints. Both distinct parties and distinct host strings
+        # are therefore required before a multi-item set may be corroborative.
+        # Host strings do not prove different ownership, so this remains a
+        # conservative heuristic rather than a source-identity oracle.
         distinct_submitters = {str(e.submitter) for e in evidences}
-        not_independently_corroborated = len(evidences) > 1 and len(distinct_submitters) == 1
+        distinct_hosts = {_evidence_host(e.url) for e in evidences}
+        not_independently_corroborated = (
+            len(evidences) > 1
+            and (len(distinct_submitters) < 2 or len(distinct_hosts) < 2 or "" in distinct_hosts)
+        )
 
         def judge() -> dict:
             sources = [
-                {**self._fetch_agent_evidence_excerpt(url), "digest": digests_by_url[url]}
-                for url in urls
+                {
+                    **self._fetch_agent_evidence_excerpt(
+                        evidence.url, evidence.content_digest if enforce_digest else ""
+                    ),
+                    "digest": evidence.content_digest,
+                }
+                for evidence in evidences
             ]
             prompt = (
                 "You are adjudicating whether a delivered AI-agent task output satisfies one "
@@ -1190,11 +1253,15 @@ class SpecLock(gl.Contract):
             ):
                 raise gl.vm.UserError(f"{ERROR_LLM} invalid sufficiency enum: {sufficiency}")
             rationale = str(data.get("rationale", ""))[:MAX_RATIONALE_CHARS]
+            if enforce_digest and any(source.get("digest_matches") is not True for source in sources):
+                finding = FINDING_UNVERIFIABLE
+                sufficiency = SUFFICIENCY_UNVERIFIABLE
+                rationale = "fetched evidence does not match the committed digest"
             if not_independently_corroborated and sufficiency == SUFFICIENCY_SUFFICIENT:
                 sufficiency = SUFFICIENCY_INSUFFICIENT
                 rationale = (
                     rationale + " [auto-downgraded: all evidence for this criterion was "
-                    "submitted by a single party, so it is not independently corroborated]"
+                    "did not come from both distinct parties and distinct hosts, so it is not independently corroborated]"
                 )[:MAX_RATIONALE_CHARS]
             return {"finding": finding, "sufficiency": sufficiency, "rationale": rationale}
 
@@ -1238,24 +1305,44 @@ class SpecLock(gl.Contract):
         the bond back to the appellant via `claimable` if the appeal is
         `UPHELD`, or to the other party if `REJECTED`; the credited party
         calls `withdraw()` to receive it (see the module docstring)."""
-        agreement = self._get_agreement(agreement_id)
-        self._require(not agreement.uses_milestones, "appeals are not yet supported for milestone-based agreements")
-        self._require(agreement.phase == PHASE_PROVISIONAL_VERDICT, "appeal only possible on a provisional verdict")
-        now = self._next_seq()
         caller = gl.message.sender_address
-        self._require(self._is_party(agreement, caller), "only a party may appeal")
-        self._require(int(agreement.appeal_rounds_used) < int(agreement.max_appeal_rounds), "appeal rounds exhausted")
-        self._require(1 <= len(grounds) <= MAX_APPEAL_GROUNDS_CHARS, "appeal grounds length out of bounds")
-        self._require(len(challenged_finding_ids) > 0, "at least one challenged finding id required")
-
-        evaluation = self.evaluations[agreement.latest_evaluation_id]
-        findings = {f["criterion_id"] for f in json.loads(evaluation.findings_json)}
-        for cid in challenged_finding_ids:
-            self._require(cid in findings, f"unknown challenged criterion id: {cid}")
-
-        required_bond = max(1, int(agreement.funded_amount) // 10)
         sent_value = int(gl.message.value)
-        self._require(sent_value == required_bond, f"appeal bond must be exactly {required_bond}")
+        if agreement_id not in self.agreements:
+            if sent_value > 0:
+                self._refund_rejected_value(caller, sent_value)
+                return ""
+            self._require(False, "unknown agreement_id")
+        agreement = self.agreements[agreement_id]
+        reason = ""
+        if agreement.uses_milestones:
+            reason = "appeals are not yet supported for milestone-based agreements"
+        elif agreement.phase != PHASE_PROVISIONAL_VERDICT:
+            reason = "appeal only possible on a provisional verdict"
+        elif not self._is_party(agreement, caller):
+            reason = "only a party may appeal"
+        elif int(agreement.appeal_rounds_used) >= int(agreement.max_appeal_rounds):
+            reason = "appeal rounds exhausted"
+        elif not (1 <= len(grounds) <= MAX_APPEAL_GROUNDS_CHARS):
+            reason = "appeal grounds length out of bounds"
+        elif len(challenged_finding_ids) == 0:
+            reason = "at least one challenged finding id required"
+        else:
+            evaluation = self.evaluations[agreement.latest_evaluation_id]
+            findings = {f["criterion_id"] for f in json.loads(evaluation.findings_json)}
+            if any(cid not in findings for cid in challenged_finding_ids):
+                reason = "unknown challenged criterion id"
+            else:
+                required_bond = max(1, int(agreement.funded_amount) // 10)
+                if sent_value != required_bond:
+                    reason = "appeal bond does not match required amount"
+        if reason:
+            if sent_value > 0:
+                self._refund_rejected_value(caller, sent_value)
+                return ""
+            self._require(False, reason)
+
+        now = self._next_seq()
+        required_bond = max(1, int(agreement.funded_amount) // 10)
         self.value_in_total = u256(int(self.value_in_total) + sent_value)
 
         appeal_id = f"{agreement_id}-ap{self.next_appeal_seq}"
@@ -1560,19 +1647,43 @@ class SpecLock(gl.Contract):
         `resolve_warranty_claim` performs the actual validator-adjudicated
         re-judgment against it (never at filing time), exactly as
         `resolve_appeal` defers judgment past `file_appeal`."""
-        agreement = self._get_agreement(agreement_id)
-        self._require(agreement.warranty_status == "HELD", "no active warranty holdback to claim against")
         caller = gl.message.sender_address
-        self._require(caller == agreement.buyer, "only the buyer may file a warranty claim")
-        self._require(1 <= len(grounds) <= MAX_APPEAL_GROUNDS_CHARS, "warranty claim grounds length out of bounds")
-        _validate_url(evidence_url)
-        self._require(len(evidence_digest) == 64, "evidence_digest must be a sha256 hex digest")
-        self._require(len(evidence_metadata_json) <= MAX_EVIDENCE_METADATA_CHARS, "evidence metadata too large")
+        sent_value = int(gl.message.value)
+        if agreement_id not in self.agreements:
+            if sent_value > 0:
+                self._refund_rejected_value(caller, sent_value)
+                return ""
+            self._require(False, "unknown agreement_id")
+        agreement = self.agreements[agreement_id]
+        reason = ""
+        if agreement.warranty_status != "HELD":
+            reason = "no active warranty holdback to claim against"
+        elif caller != agreement.buyer:
+            reason = "only the buyer may file a warranty claim"
+        elif not (1 <= len(grounds) <= MAX_APPEAL_GROUNDS_CHARS):
+            reason = "warranty claim grounds length out of bounds"
+        elif len(evidence_digest) != 64:
+            reason = "evidence_digest must be a sha256 hex digest"
+        elif len(evidence_metadata_json) > MAX_EVIDENCE_METADATA_CHARS:
+            reason = "evidence metadata too large"
+        else:
+            try:
+                _validate_url(evidence_url)
+            except gl.vm.UserError:
+                reason = "invalid warranty evidence URL"
+            if not reason:
+                held = int(agreement.warranty_held_amount)
+                required_bond = max(1, held // 10)
+                if sent_value != required_bond:
+                    reason = "warranty claim bond does not match required amount"
+        if reason:
+            if sent_value > 0:
+                self._refund_rejected_value(caller, sent_value)
+                return ""
+            self._require(False, reason)
 
         held = int(agreement.warranty_held_amount)
         required_bond = max(1, held // 10)
-        sent_value = int(gl.message.value)
-        self._require(sent_value == required_bond, f"warranty claim bond must be exactly {required_bond}")
         self.value_in_total = u256(int(self.value_in_total) + sent_value)
 
         claim_id = f"{agreement_id}-wc{self.next_warranty_claim_seq}"
@@ -1603,8 +1714,10 @@ class SpecLock(gl.Contract):
         evaluator functions (`_evaluate_api_profile`/`_evaluate_agent_profile`)
         as the ordinary evaluation path — never a leader's unverified say-so.
         A FAIL or PARTIAL re-judgment UPHOLDS the claim (the holdback is
-        refunded to the buyer); a full PASS REJECTS it (the holdback is
-        released to the provider). The bond is credited back via the same
+        refunded to the buyer); PASS or UNVERIFIABLE rejects it because the
+        buyer did not establish a verifiable defect (the holdback is released
+        to the provider). The fetched claim evidence must match its committed
+        digest. The bond is credited back via the same
         pattern as `resolve_appeal`: to the buyer if UPHELD, to the
         provider if REJECTED."""
         agreement = self._get_agreement(agreement_id)
@@ -1625,9 +1738,9 @@ class SpecLock(gl.Contract):
         )
         all_criteria = json.loads(agreement.criteria_json)
         if agreement.profile == PROFILE_API:
-            result = self._evaluate_api_profile(all_criteria, [receipt])
+            result = self._evaluate_api_profile(all_criteria, [receipt], enforce_digest=True)
         else:
-            result = self._evaluate_agent_profile(all_criteria, [receipt])
+            result = self._evaluate_agent_profile(all_criteria, [receipt], enforce_digest=True)
         findings = result["findings"]
         ambiguous_ids = {a["criterion_id"] for a in json.loads(agreement.ambiguity_report)}
         findings = self._apply_specification_attribution(findings, ambiguous_ids)
@@ -1651,7 +1764,7 @@ class SpecLock(gl.Contract):
 
         held = int(agreement.warranty_held_amount)
         claim.resolution_evaluation_id = evaluation_id
-        claim.resolution = "REJECTED" if overall == FINDING_PASS else "UPHELD"
+        claim.resolution = "UPHELD" if overall in (FINDING_FAIL, FINDING_PARTIAL) else "REJECTED"
         self.warranty_claims[claim.claim_id] = claim
 
         if claim.resolution == "UPHELD":

@@ -416,10 +416,30 @@ def test_fund_agreement_requires_sent_value_to_match_declared_amount(direct_vm, 
     contract.accept_agreement(agreement_id)
     direct_vm.sender = direct_alice
     direct_vm.value = 1  # claims 1000 but sends only 1
-    with direct_vm.expect_revert():
-        contract.fund_agreement(agreement_id, 1000)
+    assert contract.fund_agreement(agreement_id, 1000) is False
     direct_vm.value = 0
     assert contract.get_agreement(agreement_id)["phase"] == "ACCEPTED"
+    from genlayer.py.types import Address
+    assert contract.get_claimable(str(Address(bytes(direct_alice)))) == 1
+
+
+def test_rejected_funding_value_is_refundable_for_unauthorized_caller(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy(CONTRACT)
+    direct_vm.sender = direct_alice
+    agreement_id = contract.create_agreement(
+        direct_bob, "api_delivery", "spec",
+        [{"id": "c1", "description": "endpoint responds", "priority": "required", "evidence_method": "http:c1"}],
+        1,
+    )
+    direct_vm.sender = direct_bob
+    contract.accept_agreement(agreement_id)
+    direct_vm.sender = direct_bob
+    direct_vm.value = 50
+    assert contract.fund_agreement(agreement_id, 50) is False
+    direct_vm.value = 0
+    from genlayer.py.types import Address
+    assert contract.get_agreement(agreement_id)["phase"] == "ACCEPTED"
+    assert contract.get_claimable(str(Address(bytes(direct_bob)))) == 50
 
 
 def test_settle_on_pass_credits_provider_claimable_not_buyer(direct_vm, direct_deploy, direct_alice, direct_bob):
@@ -504,10 +524,11 @@ def test_appeal_requires_exact_bond_value(direct_vm, direct_deploy, direct_alice
 
     direct_vm.sender = direct_alice
     direct_vm.value = 1  # required bond is 100 (1000 // 10)
-    with direct_vm.expect_revert():
-        contract.file_appeal(agreement_id, ["c1"], "disagree")
+    assert contract.file_appeal(agreement_id, ["c1"], "disagree") == ""
     direct_vm.value = 0
     assert contract.get_agreement(agreement_id)["phase"] == "PROVISIONAL_VERDICT"
+    from genlayer.py.types import Address
+    assert contract.get_claimable(str(Address(bytes(direct_alice)))) == 1
 
 
 def test_appeal_bond_credited_to_appellant_on_upheld(direct_vm, direct_deploy, direct_alice, direct_bob):

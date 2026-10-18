@@ -159,7 +159,7 @@ def test_different_submitters_sufficient_claim_is_not_downgraded(direct_vm, dire
     contract = direct_deploy(CONTRACT)
     agreement_id = _setup_frozen_agent_agreement(contract, direct_vm, direct_alice, direct_bob)
     _submit(contract, direct_vm, direct_bob, agreement_id, "https://artifacts.example.com/summary.txt")
-    _submit(contract, direct_vm, direct_alice, agreement_id, "https://artifacts.example.com/summary-mirror.txt")
+    _submit(contract, direct_vm, direct_alice, agreement_id, "https://mirror.example.net/summary-mirror.txt")
 
     direct_vm.mock_llm(
         r".*adjudicating.*",
@@ -171,6 +171,24 @@ def test_different_submitters_sufficient_claim_is_not_downgraded(direct_vm, dire
     finding = evaluation["findings"][0]
     assert finding["sufficiency"] == "SUFFICIENT"
     assert "auto-downgraded" not in finding["rationale"]
+
+
+def test_different_submitters_on_same_host_are_not_independent_sources(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy(CONTRACT)
+    agreement_id = _setup_frozen_agent_agreement(contract, direct_vm, direct_alice, direct_bob)
+    _submit(contract, direct_vm, direct_bob, agreement_id, "https://artifacts.example.com/summary.txt")
+    _submit(contract, direct_vm, direct_alice, agreement_id, "https://artifacts.example.com/mirror.txt")
+
+    direct_vm.mock_llm(
+        r".*adjudicating.*",
+        json.dumps({"finding": "PASS", "sufficiency": "SUFFICIENT", "rationale": "The two reports confirm the same result."}),
+    )
+    direct_vm.sender = direct_bob
+    evaluation = contract.get_evaluation(contract.request_evaluation(agreement_id))
+    finding = evaluation["findings"][0]
+    assert finding["finding"] == "PASS"
+    assert finding["sufficiency"] == "INSUFFICIENT"
+    assert "distinct hosts" in finding["rationale"]
 
 
 def test_agent_judge_actually_fetches_and_includes_real_evidence_content(direct_vm, direct_deploy, direct_alice, direct_bob):

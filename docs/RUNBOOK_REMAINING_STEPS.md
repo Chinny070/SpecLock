@@ -1,8 +1,8 @@
-# Runbook: Studionet verification record (all items closed out)
+# Runbook: Studionet verification record (historical lifecycle steps complete)
 
-Both evaluation profiles have been fully exercised live on Studio Network (see `docs/DEPLOYMENT.md`): API-delivery (`"2"` negative, `"4"` positive) and AI-agent-delivery (`"5"` positive, `"6"` an honest `UNVERIFIABLE`). `recover_inconclusive` has been exercised live end to end. A real native-value escrow + appeal-bond design was built, live-tested, found to fail, root-caused, fixed, redeployed, and fully live-verified (real deposits, settlements, a real appeal bond, and real GEN withdrawals, including live-tested double-withdrawal and no-balance-withdrawal rejections). Nothing remains open from this runbook.
+The original API/agent and recovery demonstrations below are historical. Subsequent work added the 38-feature audit, milestones, warranty claims, the payable refund fix, and strict warranty evidence-digest checks. The latest deployment and remaining submission limitations are in the new top section of `docs/DEPLOYMENT.md` and `SUBMISSION.md`; this file is not the current deployment manifest.
 
-**Current contract:** `0xbE2a98135e41B4fE722919b87024D867F8De8343` on `studionet` (chain id `61999`) — the real-escrow design, fully live-verified (see item 2 below). **Predecessor contract:** `0xD5602E88b021573cbb364Efaae8DCD48DF555ff7` — the bookkeeping-only design, where the four API/agent lifecycle agreements and the `recover_inconclusive` demonstration (item 1 below) were run; identical application logic except the escrow wrapping.
+**Historical contract in this runbook:** `0xbE2a98135e41B4fE722919b87024D867F8De8343`. The latest release is `0xe52Faa4e49AF53F3f1bD7fef274D324483784e44` (chain `61999`); see `docs/DEPLOYMENT.md` for its receipt and live refund/warranty tests.
 
 ## 1. `recover_inconclusive` — DONE, live on the predecessor deployment
 

@@ -203,10 +203,9 @@ def test_milestone_agreement_rejects_top_level_single_evaluation_methods(direct_
 
     [ms] = contract.get_milestones(agreement_id)
     contract.request_milestone_evaluation(agreement_id, ms["milestone_id"])
-    with direct_vm.expect_revert():
-        direct_vm.value = 100
-        contract.file_appeal(agreement_id, ["c1"], "disagree")
-        direct_vm.value = 0
+    direct_vm.value = 100
+    assert contract.file_appeal(agreement_id, ["c1"], "disagree") == ""
+    direct_vm.value = 0
 
 
 def test_define_milestones_rejects_wrong_phase_and_bad_criterion_id(direct_vm, direct_deploy, direct_alice, direct_bob):

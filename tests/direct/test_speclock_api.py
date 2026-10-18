@@ -291,7 +291,6 @@ def test_appeal_replay_after_resolution_rejected(direct_vm, direct_deploy, direc
     contract.file_appeal(agreement_id, ["c1"], "still disagree")
     direct_vm.value = 0
     contract.resolve_appeal(agreement_id)
-    with direct_vm.expect_revert():
-        direct_vm.value = 100
-        contract.file_appeal(agreement_id, ["c1"], "one too many")
-        direct_vm.value = 0
+    direct_vm.value = 100
+    assert contract.file_appeal(agreement_id, ["c1"], "one too many") == ""
+    direct_vm.value = 0
