@@ -2,7 +2,9 @@
 
 ## Current source
 
-Contract source SHA-256: candidate hash recorded after commit.
+Contract source SHA-256: `0E7A7723C259DCF1CFAAEC8AFE62F873D6746335D63E9D8A1C2C7B25DFC4A1FE`.
+The byte-identical source is deployed at `0x142A372b4cA7cf3784327DFA2e2B0eCF45D4eA14` on Studio Network
+(chain `61999`); deployment transaction `0x34ee57640f53c1826dc77e5900d66a81bb05f2c59fb899d4f19168b00143329e`.
 The contract pins `py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6`.
 Environment: Python 3.12, `genlayer-test==0.29.2`, `genvm-linter==0.11.1rc2`, pytest 8.4.2.
 
@@ -30,27 +32,13 @@ print its checkmark output. The initial CP1252 console attempt raised `UnicodeEn
 
 ## Gate D — Clean clone
 
-Verified from GitHub clone `6cb9e27c2729a5f7cde89b4e7e2b5b1df0dc192b` in
-`C:\Users\USERpc\AppData\Local\Temp\speclock-clean-6cb9e27` using committed files only. Installed
-`requirements-dev.txt`, ran both GenVM lint/schema commands, and ran `pytest -q tests/direct --tb=short`:
-**89 passed**; lint and validation passed. The final follow-up commit changes only verification/submission
-documentation, not contract source, tests, dependencies, or runtime configuration.
+Verified from a fresh clone of commit `b6fdb8a6e02b93acaa6d2dc942bf04b9edff96df` in `C:\Users\USERpc\AppData\Local\Temp\speclock-clean-b6fdb8a`. `pytest -q tests/direct`: **94 passed**. `genvm-lint check contracts/speclock.py` and `genvm-lint validate contracts/speclock.py`: passed (3 checks; 45 methods) after setting `PYTHONIOENCODING=utf-8` for Windows console output.
 
 ## Gate E — Studionet
 
-Last deployed source `0xCEE0430CcC760f1Dce94d2E416CbeCe2b1CB8c79`, chain ID `61999`, deployment transaction
-`0xc4f1be49ed4f0af80e12e6abc4d2b16f5d3e9acc2bf26c8a4ed2c20146148312`, finalized with `MAJORITY_AGREE` and leader
-`execution_result: SUCCESS`. Representative current-source API/agent PASS and FAIL, actual native funding and
-withdrawal, warranty anti-redirection and claim resolution, milestone settlement, and inconclusive recovery with
-recovery-aware replay were executed and read back. The detailed transaction ledger is
-`docs/evidence/studionet-corrected-release-2026-10-18.md`.
+Latest candidate deployment: `0x142A372b4cA7cf3784327DFA2e2B0eCF45D4eA14`, chain `61999`, deployment transaction `0x34ee57640f53c1826dc77e5900d66a81bb05f2c59fb899d4f19168b00143329e`, source SHA-256 `0E7A7723C259DCF1CFAAEC8AFE62F873D6746335D63E9D8A1C2C7B25DFC4A1FE`. Deployment finalized with `MAJORITY_AGREE` and leader `SUCCESS`; `genlayer schema` returned 45 methods. Current-source API/agent PASS and FAIL, PARTIAL settlement, warranty claim resolution, real withdrawals, and milestone settlement/replay were executed and read back. See `docs/evidence/studionet-reviewer-fix-2026-10-18.md` and `docs/evidence/studionet-negative-regressions-2026-10-18.json`.
 
-The current 94-test candidate changes the stored evaluation and agreement records. It has not yet been deployed;
-therefore the preceding live transactions do not prove those candidate-specific changes.
-
-This gate is **representative, not exhaustive**: four of 38 capabilities remain partial (#12, #19, #21, #33); two
-incomplete milestone probes and one warranty probe left small test amounts unsettled/claimable, and test fees were not
-itemized. See `SUBMISSION.md`, `docs/FEATURE_MATRIX.md`, `docs/DEPLOYMENT.md`, and `docs/SECURITY.md`.
+This is representative, not exhaustive. #12, #19, #21, and #33 remain partial; #17 is Direct Mode-verified but its bilateral acknowledgement path was not repeated on-chain. Appeal/procedural-review and non-milestone inconclusive recovery were not repeated against this release. Cumulative gross transfer volume is recorded as 0.017038 GEN before unitemized fees; it is not exact fee-inclusive accounting.
 
 ## Integration tests
 

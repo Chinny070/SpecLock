@@ -1,14 +1,12 @@
 # SUBMISSION
 
-## Current candidate (before redeployment)
+## Current release (deployed and representative lifecycles verified)
 
-The source now contains additional reviewer fixes: sufficiency-aware PARTIAL payouts with a defensive PASS invariant;
-immutable per-evaluation receipt bindings carried through appeals; warranty claims restricted to a final
-PASS/SUFFICIENT criterion and its explicit frozen `target_url`; two-sided ambiguity acknowledgement; symmetric
-warranty/milestone exclusion; and milestone-aware consumer views. These changes pass 94/94 Direct Mode tests, lint,
-and schema validation. They are not yet on the deployed contract, so the earlier Studionet evidence below does not
-prove this candidate. A new deployment and live verification are required before this candidate can be considered
-submission-ready.
+The deployed source includes sufficiency-aware PARTIAL payouts and a defensive PASS invariant; immutable criterion-to-receipt bindings across evaluations and appeals; warranty claims bound to the finalized PASS/SUFFICIENT finding and frozen target URL; bilateral economic consent; warranty/milestone exclusion; bilateral ambiguity acknowledgement; and milestone-aware views.
+
+Contract: `0x142A372b4cA7cf3784327DFA2e2B0eCF45D4eA14`, GenLayer Studio Network chain `61999`. Deployment tx `0x34ee57640f53c1826dc77e5900d66a81bb05f2c59fb899d4f19168b00143329e` finalized with `MAJORITY_AGREE` and leader `SUCCESS`; the 45-method schema is callable. Deployed source SHA-256 `0E7A7723C259DCF1CFAAEC8AFE62F873D6746335D63E9D8A1C2C7B25DFC4A1FE` matches the source at commit `b6fdb8a6e02b93acaa6d2dc942bf04b9edff96df`.
+
+Candidate-specific live evidence includes API and agent PASS/FAIL, PARTIAL settlement, real escrow funding/withdrawals, warranty anti-redirection and claim resolution, and milestone settlement/replay. See [the release ledger](docs/evidence/studionet-reviewer-fix-2026-10-18.md) and [the detailed negative transaction log](docs/evidence/studionet-negative-regressions-2026-10-18.json). Direct Mode: 94/94; GenVM lint and schema validation: passed. Four capabilities remain partial (#12, #19, #21, #33). The current bilateral ambiguity acknowledgement is covered by local tests but was not separately exercised on-chain. Fee-inclusive cumulative spending is not certified and SpecLock is not claimed fully complete or submission-ready.
 
 ## What SpecLock is
 
@@ -16,7 +14,7 @@ A single canonical GenLayer Intelligent Contract (`contracts/speclock.py`) for u
 
 ## What consensus actually protects here — now proven live, not just by design
 
-For every criterion judgment, the leader's observation is independently re-derived by every validator (`gl.vm.run_nondet_unsafe` with a custom validator function — see `docs/CONSENSUS.md`) and only the decision-critical fields are compared, never the leader's narrative alone. This is no longer only a design claim: **four complete agreement lifecycles were executed and settled on GenLayer Studio Network, across both evaluation profiles**, each `create_agreement → accept_agreement → fund_agreement → freeze_agreement → submit_evidence → request_evaluation → finalize_verdict ×2 → settle`, every step `FINALIZED` under real multi-validator consensus.
+For every criterion judgment, the leader's observation is independently re-derived by every validator (`gl.vm.run_nondet_unsafe` with a custom validator function — see `docs/CONSENSUS.md`) and only the decision-critical fields are compared, never the leader's narrative alone. Across the project's deployment history, **four complete agreement lifecycles were executed and settled on GenLayer Studio Network, across both evaluation profiles**, each `create_agreement → accept_agreement → fund_agreement → freeze_agreement → submit_evidence → request_evaluation → finalize_verdict ×2 → settle`, every step `FINALIZED` under real multi-validator consensus. Current candidate-specific lifecycle evidence is listed separately above.
 
 API-delivery: real validators independently fetched `https://httpbin.org/status/200` and correctly derived `overall_finding:"FAIL"` (reachable, HTTP 200, non-JSON body); real validators independently fetched `https://httpbin.org/json` and correctly derived `overall_finding:"PASS"`. Both settled exactly matching the deterministic rules (`FAIL` → full refund to buyer; `PASS` → full release to provider).
 
@@ -36,27 +34,11 @@ See `docs/PROTOCOL.md`: freelance/API escrow, AI-agent task marketplaces, and gr
 
 ## Deployment status
 
-**Corrected reviewer-fix release:** contract `0xCEE0430CcC760f1Dce94d2E416CbeCe2b1CB8c79`, Studionet chain id
-`61999`, deployment transaction `0xc4f1be49ed4f0af80e12e6abc4d2b16f5d3e9acc2bf26c8a4ed2c20146148312`.
-Receipt: `FINALIZED`, `MAJORITY_AGREE`, leader `execution_result: SUCCESS`; callable 45-method schema. Exact source
-SHA-256: `AFCDF4D9841F5F170644586A564DB4740961280654E0545F6B6C2C65E8C8734D`.
+**Current reviewer-fix release:** contract `0x142A372b4cA7cf3784327DFA2e2B0eCF45D4eA14`, Studionet chain `61999`, deployment tx `0x34ee57640f53c1826dc77e5900d66a81bb05f2c59fb899d4f19168b00143329e`. Receipt: `FINALIZED`, `MAJORITY_AGREE`, leader `execution_result: SUCCESS`; callable 45-method schema. Source SHA-256: `0E7A7723C259DCF1CFAAEC8AFE62F873D6746335D63E9D8A1C2C7B25DFC4A1FE`.
 
-The corrected release passed the malformed-payable funding regression:
-`0x25eda7e6f64c0286d74ea2496e4b4725d5e964e1d2c80ac88d711cf3bd01a53b` finalized with `MAJORITY_AGREE` and
-`execution_result: SUCCESS`, returned `false`, and credited the attached `5,000,000,000,000` atto to claimable refund
-accounting without funding the agreement. After a transient RPC timeout on that first probe, follow-up runs on this
-same source verified API PASS/FAIL, AI-agent PASS/FAIL, actual escrow settlement and beneficiary withdrawals, warranty
-evidence anti-redirection and claim resolution, milestone bilateral consent/evaluation/settlement, and the
-`UNVERIFIABLE` → `RECOVERY_PENDING` → `recover_inconclusive` → `REFUNDED` lifecycle. Recovery-aware replay returned
-`matches_recorded_settlement:true` and `recovery_applied:true`. Exact transaction hashes, findings, wallet deltas,
-incomplete probes, and the spending record are in
-[`docs/evidence/studionet-corrected-release-2026-10-18.md`](docs/evidence/studionet-corrected-release-2026-10-18.md).
+The current source has candidate-specific API/agent PASS and FAIL, PARTIAL settlement, real payable funding and beneficiary withdrawals, hostile warranty evidence rejection and claim resolution, and milestone settlement/replay. The detailed negative lifecycle transaction hashes, validator outcomes, settlement readbacks, and exact buyer balance deltas are in `docs/evidence/studionet-negative-regressions-2026-10-18.json`; positive/partial/warranty/milestone outcomes are in `docs/evidence/studionet-reviewer-fix-2026-10-18.md`.
 
-The 34/38 count and evidence in the historical sections below apply to prior source releases, not this corrected
-source. Those live runs now verify representative corrected-source behavior, but four capabilities remain partial
-(#12, #19, #21, #33), two earlier milestone probes stranded 0.0001 GEN in unsettled agreements, and exact
-fee-inclusive cumulative expenditure was not captured. Submission readiness therefore remains conditional on a
-reviewer accepting the documented limits and unresolved test-fund accounting; this is not a 38/38-complete claim.
+Historical transfer principal before this pass was recorded as 0.00963 GEN. This pass moved 0.007408 GEN gross native transfer volume, totaling 0.017038 GEN before fees. The configured sponsor wallet balance fell exactly 0.006 GEN for test-account top-ups; CLI reported gas price zero and no fee deduction was observed there. Earlier transaction fees were not itemized, so exact fee-inclusive spending is not established. Agreements 1 and 7 are unfunded; the candidate contract balance read back as zero.
 
 **Historical release (superseded):** contract `0xe52Faa4e49AF53F3f1bD7fef274D324483784e44`, chain id `61999`, deployment transaction `0x9934adb4b7300a641fa082aa2940d9137445f463310c51c897405cbdeb7aa583` — `FINALIZED`, `MAJORITY_AGREE`, leader `execution_result: SUCCESS`; its callable schema had 43 methods. Its rejected-payable refund and warranty digest paths were exercised live, as recorded in `docs/DEPLOYMENT.md`. This evidence is for that earlier source only.
 
@@ -118,4 +100,4 @@ A full `git log --all -p` scan of this repository's history found one real expos
 7. **A disposable test-keystore password remains in historical Git.** It is redacted from current files but cannot be removed without rewriting history; do not reuse that test account. No private key or seed phrase was committed (`docs/SECURITY.md`).
 ## Submission verdict
 
-**Submission readiness: not yet established for the current candidate.** It passes 94/94 Direct Mode tests and GenVM lint/schema validation (45 methods), but candidate-specific Studionet deployment and lifecycle checks are pending. The prior deployed version at `0xCEE0430CcC760f1Dce94d2E416CbeCe2b1CB8c79` has representative API/agent, escrow, warranty, milestone, digest-enforcement, sufficiency, and recovery-aware replay evidence; that evidence does not transfer to the changed source. Four capabilities (#12, #19, #21, #33) remain partial. The EVM payout callback limitation, previously stranded value, and historical test-password exposure remain reviewer concerns. Recorded cumulative test transfer principal before this candidate is 0.00963 GEN; fees were not itemized, so this is not a fee-inclusive total. The candidate is not called 38/38 complete or submission-ready until its clean-clone and live acceptance gates pass.
+**Submission readiness: not established.** The current deployed source passes 94/94 Direct Mode tests, GenVM lint/schema validation, and a clean-clone test/lint run. Candidate-specific API/agent positive and negative cases, PARTIAL settlement, warranty anti-redirection and claim resolution, milestone settlement/replay, and real withdrawals are evidenced. Four capabilities remain partial (#12, #19, #21, #33); current bilateral ambiguity acknowledgement is locally tested but not separately live-verified. Appeals/procedural review and recovery-aware non-milestone replay were not repeated on this deployment. The EVM child-payout failure path has no restoring callback. Gross transfer volume is 0.017038 GEN before fees; exact fee-inclusive cumulative spending is not established. Previously stranded disposable-account funds and the historical test-password exposure remain disclosed. This is not a 38/38-complete or submission-ready claim.

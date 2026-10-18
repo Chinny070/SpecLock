@@ -1,0 +1,523 @@
+{
+  "network": "GenLayer Studio Network",
+  "chainId": 61999,
+  "contract": "0x142A372b4cA7cf3784327DFA2e2B0eCF45D4eA14",
+  "sourceCommit": "b6fdb8a6e02b93acaa6d2dc942bf04b9edff96df",
+  "sourceSha256": "0E7A7723C259DCF1CFAAEC8AFE62F873D6746335D63E9D8A1C2C7B25DFC4A1FE",
+  "actors": {
+    "buyer": "0x47f1362E6D88EB0eB2069CfD9785e0A86EB86612",
+    "provider": "0xA020430bEcD2790cD5D4eCc6F66B16a23425fA9C"
+  },
+  "entries": [
+    {
+      "label": "8:create",
+      "hash": "0x8613270c1fb101efe706d417263a69dd8057f297e381dc03553a02d93fd06dd4",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "value_credited": false,
+      "value_sent": "0",
+      "votes": {
+        "0x40533175AfBbAee2c030F88259Afb5aEDbCF0E05": "agree",
+        "0x5Bbbd7cdD63c0ba7f088038Cb049bDDAbE4F6fd1": "agree",
+        "0x8a876C3F3a4783Bd123982bcBF3c672dc0239004": "agree",
+        "0xA712cB25a4002666FA9D09477251f238dD9e06b3": "agree",
+        "0xad7d13f269CeAd4379E64a1A3a0803a827e70B43": "agree"
+      }
+    },
+    {
+      "label": "8:accept",
+      "hash": "0xfe73aed8ee4a95e52fcc8c2e1a0530c326bdc68fae64f077c198c9519360ef25",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "value_credited": false,
+      "value_sent": "0",
+      "votes": {
+        "0x0B50B270Eba5D9B780272C4Cf4720260177e761D": "agree",
+        "0x2FcBC452425f2F1e102c5c04b4331fcB46ee1c00": "idle",
+        "0x5Bbbd7cdD63c0ba7f088038Cb049bDDAbE4F6fd1": "idle",
+        "0xad7d13f269CeAd4379E64a1A3a0803a827e70B43": "agree",
+        "0xb0925568bFbCF00aADBcA053E6D0E1628ff3d530": "agree"
+      }
+    },
+    {
+      "label": "8:fund",
+      "hash": "0xd1118b9069ffab78c97a42ea087cc7a9bd005310fe85a93d2abcd78624e838db",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "value_credited": true,
+      "value_sent": "100000000000000",
+      "votes": {
+        "0x892C437da9b9CA0b6017B6f046F58E3526B46ec6": "idle",
+        "0x8Ce1805d6970d54748dE7160b5b395dCC5c71F44": "agree",
+        "0x8a876C3F3a4783Bd123982bcBF3c672dc0239004": "agree",
+        "0xa21bc502E3578E4b3039be8c59a257198f7c3f19": "agree",
+        "0xb0925568bFbCF00aADBcA053E6D0E1628ff3d530": "idle"
+      }
+    },
+    {
+      "label": "8:freeze",
+      "hash": "0x6aea8004bd8ed632a9caa5aa1e7966e5516502bd78b33f33fc17b98edd329741",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "value_credited": false,
+      "value_sent": "0",
+      "votes": {
+        "0x40533175AfBbAee2c030F88259Afb5aEDbCF0E05": "agree",
+        "0x5Bbbd7cdD63c0ba7f088038Cb049bDDAbE4F6fd1": "agree",
+        "0x8Ce1805d6970d54748dE7160b5b395dCC5c71F44": "agree",
+        "0xa21bc502E3578E4b3039be8c59a257198f7c3f19": "agree",
+        "0xb0925568bFbCF00aADBcA053E6D0E1628ff3d530": "agree"
+      }
+    },
+    {
+      "label": "8:evidence",
+      "hash": "0x9824601c11882e584b19c4b1754460d077c4106c91a3dd7d2cf7f25478f0d82d",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "value_credited": false,
+      "value_sent": "0",
+      "votes": {
+        "0x0B50B270Eba5D9B780272C4Cf4720260177e761D": "idle",
+        "0x40533175AfBbAee2c030F88259Afb5aEDbCF0E05": "agree",
+        "0x6a4179A851B3747A458baD2f089AB2EeFE0eBbAb": "agree",
+        "0x8a876C3F3a4783Bd123982bcBF3c672dc0239004": "agree",
+        "0xf1C7551292319EE334e2D8A24eAC108Bd4C63b21": "idle"
+      }
+    },
+    {
+      "label": "8:evaluate",
+      "hash": "0x0a969c370c6ae4193621927762704acc7de846b8675acdc3a9bf983b54e00b3d",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "value_credited": false,
+      "value_sent": "0",
+      "votes": {
+        "0x17ac0CaefB18205c737e64ee582c9245A28ca1f9": "idle",
+        "0x8a876C3F3a4783Bd123982bcBF3c672dc0239004": "agree",
+        "0xad7d13f269CeAd4379E64a1A3a0803a827e70B43": "agree",
+        "0xb0925568bFbCF00aADBcA053E6D0E1628ff3d530": "idle",
+        "0xf29b6947ed298d139FC2655DB15D868C9AbB3091": "agree"
+      }
+    },
+    {
+      "label": "8:state-after-eval",
+      "readback": {
+        "agreement_id": "8",
+        "ambiguity_report": "[]",
+        "buyer": "0x47f1362E6D88EB0eB2069CfD9785e0A86EB86612",
+        "buyer_acknowledged_ambiguity": false,
+        "buyer_consents_expire": false,
+        "buyer_economic_terms_hash": "",
+        "buyer_ready_to_finalize": false,
+        "buyer_wants_procedural_review": false,
+        "funded_amount": 100000000000000,
+        "latest_appeal_id": "",
+        "latest_evaluation_id": "8-eval6",
+        "latest_warranty_claim_id": "",
+        "milestones_defined": false,
+        "phase": "PROVISIONAL_VERDICT",
+        "policy_id": "speclock-core",
+        "policy_version": 1,
+        "procedural_review_used": false,
+        "profile": "api_delivery",
+        "provider": "0xA020430bEcD2790cD5D4eCc6F66B16a23425fA9C",
+        "provider_acknowledged_ambiguity": false,
+        "provider_consents_expire": false,
+        "provider_economic_terms_hash": "",
+        "provider_ready_to_finalize": false,
+        "provider_wants_procedural_review": false,
+        "refunded_amount": 0,
+        "released_amount": 0,
+        "retained_amount": 0,
+        "settlement_id": "",
+        "spec_fingerprint": "655e662fe6d70685ae26d172ca51ead80f1282e45adad7be19e351c4db9bea67",
+        "uses_milestones": false,
+        "warranty_bps": 0,
+        "warranty_held_amount": 0,
+        "warranty_status": "NONE"
+      }
+    },
+    {
+      "label": "8:evaluation",
+      "readback": {
+        "agreement_id": "8",
+        "evaluation_id": "8-eval6",
+        "evidence_bindings": {
+          "c1": [
+            "8-ev8"
+          ]
+        },
+        "evidence_snapshot_commitment": "36db654a783be4eb89959351f71ff1db60b60ffe6ba509a7de6aa2918b81a8ff",
+        "failure_attribution": "DELIVERY",
+        "findings": [
+          {
+            "attribution": "DELIVERY",
+            "criterion_id": "c1",
+            "finding": "FAIL",
+            "rationale": "HTTP 200 but response failed functional check",
+            "sufficiency": "SUFFICIENT"
+          }
+        ],
+        "overall_finding": "FAIL",
+        "profile": "api_delivery",
+        "round": 1,
+        "status": "PROVISIONAL"
+      }
+    },
+    {
+      "label": "8:finalize:buyer",
+      "hash": "0x1051bb279657d24787fadb27982834d0581e7f139e623fcb60f1324d407b578e",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "value_credited": false,
+      "value_sent": "0",
+      "votes": {
+        "0x2FcBC452425f2F1e102c5c04b4331fcB46ee1c00": "agree",
+        "0x892C437da9b9CA0b6017B6f046F58E3526B46ec6": "idle",
+        "0xA712cB25a4002666FA9D09477251f238dD9e06b3": "idle",
+        "0xe7eEe8a1c1690b0322d795B80A76ab2Cd1a0eAFd": "agree",
+        "0xf29b6947ed298d139FC2655DB15D868C9AbB3091": "agree"
+      }
+    },
+    {
+      "label": "8:finalize:provider",
+      "hash": "0xd054a4751482eeb5694d18d502eaa25fa4ba6b7b07aaa3b8bafdeebd13812ded",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "value_credited": false,
+      "value_sent": "0",
+      "votes": {
+        "0x2FcBC452425f2F1e102c5c04b4331fcB46ee1c00": "agree",
+        "0x6a4179A851B3747A458baD2f089AB2EeFE0eBbAb": "idle",
+        "0x892C437da9b9CA0b6017B6f046F58E3526B46ec6": "agree",
+        "0xad7d13f269CeAd4379E64a1A3a0803a827e70B43": "agree",
+        "0xe7eEe8a1c1690b0322d795B80A76ab2Cd1a0eAFd": "idle"
+      }
+    },
+    {
+      "label": "8:settle",
+      "hash": "0xeec6d3b4f28084a771ec7ed06ec907cf14cf3f155683f08be7f5cfd257f2cd85",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "value_credited": false,
+      "value_sent": "0",
+      "votes": {
+        "0x1dEcE6A694520b1d3a2e24b9f28500858C756BDb": "idle",
+        "0x5Bbbd7cdD63c0ba7f088038Cb049bDDAbE4F6fd1": "agree",
+        "0x7bf4Ea55363bbe73A4dd5b3900bf03c978A63b6e": "idle",
+        "0xA712cB25a4002666FA9D09477251f238dD9e06b3": "agree",
+        "0xf1C7551292319EE334e2D8A24eAC108Bd4C63b21": "agree"
+      }
+    },
+    {
+      "label": "8:settlement",
+      "readback": {
+        "refunded_to_buyer": 100000000000000,
+        "released_to_provider": 0,
+        "retained": 0,
+        "settlement_id": "8-st6",
+        "terminal_phase": "SETTLED"
+      }
+    },
+    {
+      "label": "8:buyer-claimable",
+      "readback": 100000000000000
+    },
+    {
+      "label": "8:withdraw:buyer",
+      "hash": "0x015a1643e3abbe00ecd06dad1d1c3a56fba3b1a124fe0de3fd44f52ce3a5c814",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "value_credited": false,
+      "value_sent": "0",
+      "votes": {
+        "0x17ac0CaefB18205c737e64ee582c9245A28ca1f9": "agree",
+        "0x40533175AfBbAee2c030F88259Afb5aEDbCF0E05": "agree",
+        "0x6a4179A851B3747A458baD2f089AB2EeFE0eBbAb": "agree",
+        "0xA712cB25a4002666FA9D09477251f238dD9e06b3": "agree",
+        "0xa21bc502E3578E4b3039be8c59a257198f7c3f19": "agree"
+      }
+    },
+    {
+      "label": "8:withdraw-child",
+      "hash": "0x23842a2c3dba29e77502ea79aef4aaee487418b8bdbf2bc5a02b9500a625972c",
+      "status": "FINALIZED",
+      "result_name": "NO_MAJORITY",
+      "execution_result": null,
+      "value_credited": true,
+      "value_sent": "0",
+      "votes": null
+    },
+    {
+      "label": "8:buyer-balance-delta",
+      "before": "900000000000000",
+      "after": "1000000000000000",
+      "delta": "100000000000000"
+    },
+    {
+      "label": "9:create",
+      "hash": "0x480dd775a59f4857be3ffa03725a4b99053faae8c9854e6ee579815bc9f655ba",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "value_credited": false,
+      "value_sent": "0",
+      "votes": {
+        "0x0B50B270Eba5D9B780272C4Cf4720260177e761D": "idle",
+        "0x5Bbbd7cdD63c0ba7f088038Cb049bDDAbE4F6fd1": "agree",
+        "0x6a4179A851B3747A458baD2f089AB2EeFE0eBbAb": "agree",
+        "0xe7eEe8a1c1690b0322d795B80A76ab2Cd1a0eAFd": "agree",
+        "0xf29b6947ed298d139FC2655DB15D868C9AbB3091": "idle"
+      }
+    },
+    {
+      "label": "9:accept",
+      "hash": "0xf287f9075ca44eda8a8e6e123cd9b08201eadeabb70a3a091f485b720e2558e2",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "value_credited": false,
+      "value_sent": "0",
+      "votes": {
+        "0x1dEcE6A694520b1d3a2e24b9f28500858C756BDb": "agree",
+        "0x2FcBC452425f2F1e102c5c04b4331fcB46ee1c00": "agree",
+        "0x892C437da9b9CA0b6017B6f046F58E3526B46ec6": "idle",
+        "0x9244De5F20cB75A0c51d79A9A3208D00a99aFc10": "agree",
+        "0xf1C7551292319EE334e2D8A24eAC108Bd4C63b21": "agree"
+      }
+    },
+    {
+      "label": "9:fund",
+      "hash": "0x4edd0c672f67cfd589eba738e97f29b2c553bba0ad5428ae4ffb9870f3470eb0",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "value_credited": true,
+      "value_sent": "100000000000000",
+      "votes": {
+        "0x40533175AfBbAee2c030F88259Afb5aEDbCF0E05": "idle",
+        "0x5Bbbd7cdD63c0ba7f088038Cb049bDDAbE4F6fd1": "agree",
+        "0x6a4179A851B3747A458baD2f089AB2EeFE0eBbAb": "agree",
+        "0xe7eEe8a1c1690b0322d795B80A76ab2Cd1a0eAFd": "agree",
+        "0xf29b6947ed298d139FC2655DB15D868C9AbB3091": "idle"
+      }
+    },
+    {
+      "label": "9:freeze",
+      "hash": "0xb307463530582953dfff775c1922fbe45d15434906ad32bba606c640c845ca0a",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "value_credited": false,
+      "value_sent": "0",
+      "votes": {
+        "0x0B50B270Eba5D9B780272C4Cf4720260177e761D": "agree",
+        "0x40533175AfBbAee2c030F88259Afb5aEDbCF0E05": "idle",
+        "0x8Ce1805d6970d54748dE7160b5b395dCC5c71F44": "agree",
+        "0xad7d13f269CeAd4379E64a1A3a0803a827e70B43": "idle",
+        "0xb0925568bFbCF00aADBcA053E6D0E1628ff3d530": "agree"
+      }
+    },
+    {
+      "label": "9:evidence",
+      "hash": "0xae2eee9711c06266c6521616a9dbbe429c300d1e43668fe08ce74b6a214bf98c",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "value_credited": false,
+      "value_sent": "0",
+      "votes": {
+        "0x40533175AfBbAee2c030F88259Afb5aEDbCF0E05": "agree",
+        "0x5Bbbd7cdD63c0ba7f088038Cb049bDDAbE4F6fd1": "agree",
+        "0x6a4179A851B3747A458baD2f089AB2EeFE0eBbAb": "agree",
+        "0x8Ce1805d6970d54748dE7160b5b395dCC5c71F44": "agree",
+        "0xa21bc502E3578E4b3039be8c59a257198f7c3f19": "idle"
+      }
+    },
+    {
+      "label": "9:evaluate",
+      "hash": "0x0b32b72aee4bde6c683c0d78d42f3aff87354921ffde72df59477fabc0935ed5",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "value_credited": false,
+      "value_sent": "0",
+      "votes": {
+        "0x17ac0CaefB18205c737e64ee582c9245A28ca1f9": "agree",
+        "0x2FcBC452425f2F1e102c5c04b4331fcB46ee1c00": "idle",
+        "0x40533175AfBbAee2c030F88259Afb5aEDbCF0E05": "agree",
+        "0x7bf4Ea55363bbe73A4dd5b3900bf03c978A63b6e": "agree",
+        "0xf29b6947ed298d139FC2655DB15D868C9AbB3091": "idle"
+      }
+    },
+    {
+      "label": "9:state-after-eval",
+      "readback": {
+        "agreement_id": "9",
+        "ambiguity_report": "[]",
+        "buyer": "0x47f1362E6D88EB0eB2069CfD9785e0A86EB86612",
+        "buyer_acknowledged_ambiguity": false,
+        "buyer_consents_expire": false,
+        "buyer_economic_terms_hash": "",
+        "buyer_ready_to_finalize": false,
+        "buyer_wants_procedural_review": false,
+        "funded_amount": 100000000000000,
+        "latest_appeal_id": "",
+        "latest_evaluation_id": "9-eval7",
+        "latest_warranty_claim_id": "",
+        "milestones_defined": false,
+        "phase": "PROVISIONAL_VERDICT",
+        "policy_id": "speclock-core",
+        "policy_version": 1,
+        "procedural_review_used": false,
+        "profile": "ai_agent_delivery",
+        "provider": "0xA020430bEcD2790cD5D4eCc6F66B16a23425fA9C",
+        "provider_acknowledged_ambiguity": false,
+        "provider_consents_expire": false,
+        "provider_economic_terms_hash": "",
+        "provider_ready_to_finalize": false,
+        "provider_wants_procedural_review": false,
+        "refunded_amount": 0,
+        "released_amount": 0,
+        "retained_amount": 0,
+        "settlement_id": "",
+        "spec_fingerprint": "1a0d13d2b3ed2705a5e75501f30a462e2b243da7b3ce8c712787a722d35f578e",
+        "uses_milestones": false,
+        "warranty_bps": 0,
+        "warranty_held_amount": 0,
+        "warranty_status": "NONE"
+      }
+    },
+    {
+      "label": "9:evaluation",
+      "readback": {
+        "agreement_id": "9",
+        "evaluation_id": "9-eval7",
+        "evidence_bindings": {
+          "c1": [
+            "9-ev9"
+          ]
+        },
+        "evidence_snapshot_commitment": "f5e8be6e600e753a5922afa3d7ee1f080499df7e5b8a335fe35f51c20b44ef84",
+        "failure_attribution": "DELIVERY",
+        "findings": [
+          {
+            "attribution": "DELIVERY",
+            "criterion_id": "c1",
+            "finding": "FAIL",
+            "rationale": "The only fetched artifact excerpt is plain text from robots.txt ('User-agent: *\\nDisallow: /deny'), not valid JSON. Therefore it does not contain a slideshow object with a title and slides array.",
+            "sufficiency": "SUFFICIENT"
+          }
+        ],
+        "overall_finding": "FAIL",
+        "profile": "ai_agent_delivery",
+        "round": 1,
+        "status": "PROVISIONAL"
+      }
+    },
+    {
+      "label": "9:finalize:buyer",
+      "hash": "0xcc33bfa15e4ab623822d22015e2081e8fd9f76c316df5b4aace3778faebe4c6f",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "value_credited": false,
+      "value_sent": "0",
+      "votes": {
+        "0x0B50B270Eba5D9B780272C4Cf4720260177e761D": "agree",
+        "0x40533175AfBbAee2c030F88259Afb5aEDbCF0E05": "idle",
+        "0x5Bbbd7cdD63c0ba7f088038Cb049bDDAbE4F6fd1": "idle",
+        "0x892C437da9b9CA0b6017B6f046F58E3526B46ec6": "agree",
+        "0x9244De5F20cB75A0c51d79A9A3208D00a99aFc10": "agree"
+      }
+    },
+    {
+      "label": "9:finalize:provider",
+      "hash": "0xdad25596bb974a20600a5ef2f932bd569ae1250b5b56dce98663c7d1d8ff145c",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "value_credited": false,
+      "value_sent": "0",
+      "votes": {
+        "0x0B50B270Eba5D9B780272C4Cf4720260177e761D": "agree",
+        "0x6a4179A851B3747A458baD2f089AB2EeFE0eBbAb": "idle",
+        "0x7bf4Ea55363bbe73A4dd5b3900bf03c978A63b6e": "agree",
+        "0xa21bc502E3578E4b3039be8c59a257198f7c3f19": "agree",
+        "0xb0925568bFbCF00aADBcA053E6D0E1628ff3d530": "idle"
+      }
+    },
+    {
+      "label": "9:settle",
+      "hash": "0x421f832d52ea78c46cb6bddadb0dfa6a0b5fc3ccd793102eee1f02796b9789ae",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "value_credited": false,
+      "value_sent": "0",
+      "votes": {
+        "0x2FcBC452425f2F1e102c5c04b4331fcB46ee1c00": "agree",
+        "0x40533175AfBbAee2c030F88259Afb5aEDbCF0E05": "idle",
+        "0x6a4179A851B3747A458baD2f089AB2EeFE0eBbAb": "agree",
+        "0x7bf4Ea55363bbe73A4dd5b3900bf03c978A63b6e": "agree",
+        "0xf1C7551292319EE334e2D8A24eAC108Bd4C63b21": "agree"
+      }
+    },
+    {
+      "label": "9:settlement",
+      "readback": {
+        "refunded_to_buyer": 100000000000000,
+        "released_to_provider": 0,
+        "retained": 0,
+        "settlement_id": "9-st7",
+        "terminal_phase": "SETTLED"
+      }
+    },
+    {
+      "label": "9:buyer-claimable",
+      "readback": 100000000000000
+    },
+    {
+      "label": "9:withdraw:buyer",
+      "hash": "0xefe804a7d3c5520a963cf9e0acb819ebc81e0a68ca22e1d49889ef3394681f49",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "value_credited": false,
+      "value_sent": "0",
+      "votes": {
+        "0x0B50B270Eba5D9B780272C4Cf4720260177e761D": "agree",
+        "0xA712cB25a4002666FA9D09477251f238dD9e06b3": "agree",
+        "0xb0925568bFbCF00aADBcA053E6D0E1628ff3d530": "agree",
+        "0xf1C7551292319EE334e2D8A24eAC108Bd4C63b21": "agree",
+        "0xf29b6947ed298d139FC2655DB15D868C9AbB3091": "agree"
+      }
+    },
+    {
+      "label": "9:withdraw-child",
+      "hash": "0x5fbf959ab03a077a3751dcd99edcfd65db7c04e94f953e0afd696d4d94bd1920",
+      "status": "FINALIZED",
+      "result_name": "NO_MAJORITY",
+      "execution_result": null,
+      "value_credited": true,
+      "value_sent": "0",
+      "votes": null
+    },
+    {
+      "label": "9:buyer-balance-delta",
+      "before": "900000000000000",
+      "after": "1000000000000000",
+      "delta": "100000000000000"
+    }
+  ]
+}

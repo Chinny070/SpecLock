@@ -1,58 +1,21 @@
 # Deployment
 
-## Reviewer-fix candidate (not yet deployed)
-
-The working tree now contains a new contract version addressing PARTIAL payout sufficiency, evaluation-time evidence
-bindings, warranty subject validation, warranty/milestone mutual exclusion, bilateral ambiguity acknowledgement, and
-milestone consumer views. It is pinned to the same GenVM runner. Before deployment, the existing address below remains
-the canonical live release; none of these candidate changes are claimed as network-verified. Local acceptance currently
-passes 94 Direct Mode tests, GenVM lint (3 checks), and schema validation (45 methods). Candidate source hash and the
-deployment transaction/evidence will be recorded here only after the transaction is independently read back and the
-required lifecycles execute successfully. The older deployment and its funds remain separate; deployment does not
-move or reconcile them.
-
-## Corrected reviewer-fix release (2026-10-18)
+## Latest reviewer-fix release — deployed and exercised (2026-10-18)
 
 | Field | Value |
 |---|---|
 | Network / chain | GenLayer Studio Network / `61999` |
-| Contract | `0xCEE0430CcC760f1Dce94d2E416CbeCe2b1CB8c79` |
-| Deployment transaction | `0xc4f1be49ed4f0af80e12e6abc4d2b16f5d3e9acc2bf26c8a4ed2c20146148312` |
+| Contract | `0x142A372b4cA7cf3784327DFA2e2B0eCF45D4eA14` |
+| Deployment transaction | `0x34ee57640f53c1826dc77e5900d66a81bb05f2c59fb899d4f19168b00143329e` |
 | Deployment result | `FINALIZED`, `MAJORITY_AGREE`, leader `execution_result: SUCCESS` |
-| Source SHA-256 | `AFCDF4D9841F5F170644586A564DB4740961280654E0545F6B6C2C65E8C8734D` |
-| Callable schema | 45 methods (20 views, 25 writes), confirmed by GenVM lint and schema query |
+| Source SHA-256 | `0E7A7723C259DCF1CFAAEC8AFE62F873D6746335D63E9D8A1C2C7B25DFC4A1FE` |
+| Callable schema | 45 methods (20 views, 25 writes), returned by `genlayer schema` |
 
-This release contains the reviewer fixes: warranty evidence is constrained to the original criterion and exact frozen
-service URL; API judgments assert configured JSON fields and HTTP status; normal evaluation rejects content that
-does not match the submitted digest; required insufficient evidence cannot produce a payable PASS; warranty and
-milestone economics require both parties to accept the current fingerprint before freeze; milestone phase and
-aggregate views are guarded; replay checks account for recovery; and withdrawal documentation limits guarantees if
-the EVM child transfer fails after claimable state is cleared.
+This is the exact current `contracts/speclock.py` source deployed by the recorded transaction. Candidate-specific API PASS/FAIL and PARTIAL, agent PASS/FAIL, payable settlement and real withdrawal, warranty evidence anti-redirection and claim resolution, and milestone settlement/replay are recorded in [the release evidence ledger](evidence/studionet-reviewer-fix-2026-10-18.md). Agreements 2–6, 8, and 9 reached their recorded outcomes. Agreement 1 is an unfunded DRAFT. Agreement 7 is ACCEPTED but unfunded after a Studio Network transport timeout; a readback confirmed no value entered the contract. The candidate contract balance read back as zero.
 
-The malformed payable-funding regression is one corrected-release check:
-`0x25eda7e6f64c0286d74ea2496e4b4725d5e964e1d2c80ac88d711cf3bd01a53b` finalized with `MAJORITY_AGREE` and leader
-`execution_result: SUCCESS`, returned `false`, and credited exactly `5,000,000,000,000` atto to the caller's
-claimable refund. The agreement remained `ACCEPTED` with `funded_amount: 0`. Its preceding creation and acceptance
-transactions (`0x9469131a65430fbf8d55a8499ae66e34e42c07c4d7f2f08a8786fcbab2febda8` and
-`0xf9d060ebb4b7c30af0551bc7036c98ece27ebec048141f4d882a391517fbccb9`) also finalized successfully. The next
-`eth_getTransactionByHash` RPC request timed out at the transport layer during that probe. Subsequent corrected-source
-API, agent, warranty, milestone, payout, and recovery scenarios are recorded in
-[`docs/evidence/studionet-corrected-release-2026-10-18.md`](evidence/studionet-corrected-release-2026-10-18.md).
+Direct Mode tests: 94 passed. GenVM lint and schema validation: passed (3 checks; 45 methods). Clean-clone verification of commit `b6fdb8a6e02b93acaa6d2dc942bf04b9edff96df` also passed 94 tests and both lint commands with UTF-8 output enabled.
 
-The immediately preceding deployment `0xfC82591f5144ca4aaad7d541bcC615b5AeD29be3` (tx
-`0x481ce5149362128e697f8b81bab6509561280abd6b3c5c9eb8f97845efc44ead`) is superseded. Its source SHA was
-`612C3BB94841DE76CECD669C7F0AF3DFC20D9EE78B7D97F87E774D64DA9D8E37`, without the malformed-argument guard. A live
-payable call there finalized with execution `ERROR` after the SDK encoded an integer argument as a string;
-`value_credited: true`, while the agreement remained ACCEPTED and the contract held `50,000,000,000,000` atto with no
-claimable refund. This is stranded value on the superseded deployment, not evidence about the corrected release. The
-process-local signer is gone; no recovery is claimed.
-
-## Status: corrected source deployed; representative corrected-source lifecycles verified
-
-The current source is deployed at `0xCEE0430CcC760f1Dce94d2E416CbeCe2b1CB8c79`; representative API/agent, warranty,
-milestone, withdrawal, and recovery scenarios are live-tested there as recorded above and in the evidence ledger.
-Historical evidence below belongs to prior source revisions. The corrected source has 89 passing Direct Mode tests and
-passes GenVM lint/schema validation. These recordings do not prove every capability or remove the disclosed limits.
+The candidate release does not eliminate the disclosed partial capabilities (#12, #19, #21, #33), the child-transfer recovery limitation, or the historical credential exposure. The candidate's new bilateral ambiguity acknowledgement is covered locally but was not separately exercised live. Recorded gross transfer volume is 0.017038 GEN before unitemized historical fees; see the ledger for the exact accounting limits. This is not an exhaustive 38-capability verification claim.
 
 ## Historical release: rejected-value refunds and warranty digest binding
 
@@ -366,4 +329,4 @@ All remain live on-chain (nothing can be un-deployed).
 
 ## Source/commit record
 
-The latest deployment is `0xCEE0430CcC760f1Dce94d2E416CbeCe2b1CB8c79` (source SHA-256 `AFCDF4D9841F5F170644586A564DB4740961280654E0545F6B6C2C65E8C8734D`). It carries the prior mechanisms plus the reviewer fixes listed above. Its 45-method schema passed GenVM lint and validation; 89/89 Direct Mode tests pass. Representative corrected-source network scenarios are itemized in `docs/evidence/studionet-corrected-release-2026-10-18.md`; earlier deployments provide separately labeled evidence for mechanisms not repeated on this release. Treat later contract source changes as a new release requiring updated deployment evidence.
+The latest deployment is `0x142A372b4cA7cf3784327DFA2e2B0eCF45D4eA14` (source SHA-256 `0E7A7723C259DCF1CFAAEC8AFE62F873D6746335D63E9D8A1C2C7B25DFC4A1FE`). Its deployment finalized with `MAJORITY_AGREE` and leader `SUCCESS`; schema, 94 Direct Mode tests, lint, and candidate-specific API/agent, warranty, milestone, and payout evidence are recorded above and in `docs/evidence/studionet-reviewer-fix-2026-10-18.md`.

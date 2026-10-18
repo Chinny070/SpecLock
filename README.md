@@ -2,7 +2,7 @@
 
 A single, standalone GenLayer Intelligent Contract for universal digital-delivery agreement and adjudication. One canonical contract (`contracts/speclock.py`), two fully-implemented evaluation profiles, no marketplace frontend/database/off-chain adjudicator.
 
-**Status: reviewer-fix candidate passes local verification; redeployment and required candidate-specific Studionet checks are pending.** The currently deployed release remains `0xCEE0430CcC760f1Dce94d2E416CbeCe2b1CB8c79` (chain id `61999`), deployment tx `0xc4f1be49ed4f0af80e12e6abc4d2b16f5d3e9acc2bf26c8a4ed2c20146148312`. The candidate passes 94 Direct Mode tests, GenVM lint, and schema validation (45 methods). Candidate-specific evidence-selection, warranty, PARTIAL payout, ambiguity, and milestone-view behavior is not yet claimed live. See `SUBMISSION.md`, `docs/FEATURE_MATRIX.md`, and `docs/DEPLOYMENT.md`.
+**Status: latest reviewer-fix source is deployed and representative candidate-specific Studionet tests have completed.** Contract `0x142A372b4cA7cf3784327DFA2e2B0eCF45D4eA14` (chain `61999`), deploy tx `0x34ee57640f53c1826dc77e5900d66a81bb05f2c59fb899d4f19168b00143329e`, deployed source SHA-256 `0E7A7723C259DCF1CFAAEC8AFE62F873D6746335D63E9D8A1C2C7B25DFC4A1FE`. Candidate-specific API and agent PASS/FAIL, PARTIAL payout, warranty anti-redirection/claim, milestone settlement/replay, and real withdrawals are recorded in `docs/evidence/studionet-reviewer-fix-2026-10-18.md` and the linked negative-regression JSON. Direct Mode: 94 passed; GenVM lint/schema: passed. Four capabilities remain partial, and bilateral ambiguity acknowledgement is locally tested but not re-exercised live on this release; SpecLock is not claimed fully complete or submission-ready.
 
 ## Quickstart
 
