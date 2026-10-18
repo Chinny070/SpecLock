@@ -1,6 +1,6 @@
 # Deployment
 
-## Current release — deployed, lifecycle checks pending (2026-10-18)
+## Current release — deployed and representative lifecycle checks completed (2026-10-18)
 
 | Field | Value |
 |---|---|
@@ -12,9 +12,27 @@
 | Callable schema | 47 methods (20 views, 27 writes); `genlayer schema` succeeded |
 | Readback | `get_reputation` returned zeroed counters for the configured deployer |
 
-The source returned by `genlayer code` matched the local SHA-256 after normalizing the CLI's Windows line endings to LF. The transaction was submitted through the active configured `my-studionet-wallet` on chain `61999`; its address and balance were verified before submission. The deployment and read-only schema/reputation calls are confirmed. No lifecycle transactions have yet been executed against this release.
+The source returned by `genlayer code` matched the local SHA-256 after normalizing the CLI's Windows line endings to LF. The deployment was submitted through configured `my-studionet-wallet` on chain `61999`. Lifecycle transactions are now recorded below; they used disposable SDK-created in-memory signers and the configured sponsor only for small test-account top-ups. No wallet private key or seed phrase was read or exported.
 
-Two authorized project signers are now available through the GenLayer CLI: `my-studionet-wallet` and the user-created `speclock-provider-2` (`0xf230283bdc86e3810c69cbc482b5495a8f1c4c8e`), which is unlocked and read back at 15 GEN on chain `61999`. No lifecycle transaction has yet been sent from either signer to this release. The remaining blocker is the signing interface: installed `genlayer write --help` exposes no payable `value` option, and the `genlayer` CLI's argument parser coerces digit-only strings to numbers, while this contract's generated agreement IDs are string values. The documented `genlayer-js` SDK accepts native `value` and preserves string arguments, but it needs an account object or EIP-1193 provider; the CLI's encrypted account alias is not exposed to that SDK as a signer. I did not read or export private keys. The smallest resolution is to connect an authorized signer through a supported EIP-1193 wallet provider accessible to the transaction client, or use a supported CLI/SDK adapter that signs with the encrypted account without exposing its key. Existing principal spending limits still apply; fees are not to be used as a blocker, and should be recorded when available.
+## Current-release lifecycle verification (SDK, 2026-10-18)
+
+Full transaction receipts, readbacks, findings, and balance deltas are in:
+
+- `docs/evidence/studionet-current-release-lifecycles-2026-10-18.json`
+- `docs/evidence/studionet-agent-warranty-attempt2-2026-10-18.json`
+- Incomplete first attempt: `docs/evidence/studionet-agent-warranty-2026-10-18.json`
+
+All completed writes below were `FINALIZED` with leader `execution_result: SUCCESS`; receipts and validator votes are stored in the JSON records.
+
+- **API negative, agreement `1`:** correct HTTP 200 JSON with a title that contradicted the frozen expected title evaluated `FAIL`. The agreement was finalized and refunded. Its buyer refund remained claimable because a later withdrawal attempt was blocked by transient RPC errors; it is not counted as withdrawn.
+- **Agent integrity/recovery, agreement `2`:** distinct-party/distinct-host and same-party evidence records were submitted. Both criteria returned `UNVERIFIABLE` because the fetched live pages did not match the previously submitted digests. Settlement entered `RECOVERY_PENDING`; `recover_inconclusive` moved it to `REFUNDED`. Buyer withdrawal transaction `0xf5bc5e9a8a5b116e38fe46d304cfd7ece2da97fb8478b139e52a57804871df2e` finalized; its child transfer also finalized but reported `result_name:NO_MAJORITY` with `value_credited:true`. The buyer balance increased by exactly `0.0001 GEN`. This is not counted as a corroboration success.
+- **Mutual-consent wind-down, agreement `3`:** frozen delivery deadline was exactly 604800 seconds after `frozen_at`. Buyer's consent alone left the phase FROZEN. Provider's second consent moved it to EXPIRED and refunded `0.0001 GEN`; the withdrawal child finalized with `result_name:NO_MAJORITY`, `value_credited:true`, and the buyer balance increased by exactly `0.0001 GEN`. This verifies the bilateral early-exit path, not natural expiry after seven elapsed days.
+- **Agent corroboration and warranty, agreement `5`:** commit-pinned README bytes matched across `raw.githubusercontent.com` and the jsDelivr mirror. Criterion `c1` (two parties/two hosts) returned PASS/SUFFICIENT. Criterion `c2` (one party/two hosts) returned PASS/INSUFFICIENT with the explicit deterministic auto-downgrade rationale. These URLs are mirrors of the same document; this verifies the party/host rule, not independent source ownership. Overall finding was PARTIAL. Settlement recorded `0.00005 GEN` refund, `0.000045 GEN` provider release, and `0.000005 GEN` warranty holdback.
+- A correctly hashed but unrelated RFC URL was rejected as a warranty claim (empty claim ID); its `0.0000005 GEN` bond was credited back. A same-subject claim was then adjudicated REJECTED. Provider withdrawal transaction `0xefe15c5eafe1112061f7dfe93d8ffff395b88460461fc664ebb27c849a0dc954` finalized; its child finalized with `result_name:NO_MAJORITY` and `value_credited:true`, and provider balance increased by exactly `0.0000505 GEN` (release + holdback + bond).
+
+**Incomplete first attempt:** agreement `4` was created, accepted, funded with `0.0001 GEN`, configured for warranty, accepted by both parties, and frozen. The runner stopped on an incorrect local assertion after the valid freeze; it did not evaluate or settle this agreement. Its in-memory signer keys were not persisted, so this test agreement and unused test-account balances are not recoverable by this runner. The record is retained and is not counted as a successful lifecycle.
+
+**Principal accounting:** recorded cumulative test principal is `0.018779 GEN` against the prior `0.02 GEN` ceiling, before any fee amount not itemized by the network tooling. No further test transfers were made in this run. Disposable signer addresses and all top-ups are recorded in the evidence JSON. The SDK-created signing objects existed only in process memory; they were not imported as named CLI keystores or added to Rabby.
 
 
 ## Prior reviewer-fix release — deployed and exercised (2026-10-18)
@@ -346,4 +364,4 @@ All remain live on-chain (nothing can be un-deployed).
 
 ## Source/commit record
 
-The current deployment is `0xDFb69c1890F72c7b791A938ed36C5103582E6F19` (source SHA-256 `CEC00C69E57E6AE1B70C77BE49CFFEEB912F2D55D15E42AF75A2B6687ABB6F5C`). Its deployment finalized with 5/5 `AGREE` votes and leader `SUCCESS`; schema and a read-only view succeeded. Lifecycle evidence on this deployment remains pending; the prior `0x142A...` release's lifecycle evidence is preserved above and in `docs/evidence/studionet-reviewer-fix-2026-10-18.md`.
+The current deployment is `0xDFb69c1890F72c7b791A938ed36C5103582E6F19` (source SHA-256 `CEC00C69E57E6AE1B70C77BE49CFFEEB912F2D55D15E42AF75A2B6687ABB6F5C`). Its deployment finalized with 5/5 `AGREE` votes and leader `SUCCESS`; schema and a read-only view succeeded. Representative current-release lifecycle evidence is recorded in the current-release section above and its linked JSON ledgers. This does not replace older release-specific evidence or establish all 38 capabilities as network-verified.

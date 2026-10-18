@@ -1,0 +1,814 @@
+{
+  "network": "GenLayer Studio Network",
+  "chainId": 61999,
+  "contract": "0xDFb69c1890F72c7b791A938ed36C5103582E6F19",
+  "sourceSha256": "CEC00C69E57E6AE1B70C77BE49CFFEEB912F2D55D15E42AF75A2B6687ABB6F5C",
+  "actors": {
+    "buyer": "0x1eB8859F0b647E8ebEb38Af78E14C5d6d485b921",
+    "provider": "0x432323C64b6A69185107c423936e10B185aDF75c"
+  },
+  "evidenceSources": [
+    {
+      "url": "https://raw.githubusercontent.com/Chinny070/SpecLock/2c189122922b444e01598ea0921cca6e32639707/README.md",
+      "sha256": "7802c63d8e6238c11002b453a7f7550f26b5e8dc2be2de450f14c5af6247d2cc",
+      "bytes": 5834,
+      "status": 200
+    },
+    {
+      "url": "https://cdn.jsdelivr.net/gh/Chinny070/SpecLock@2c189122922b444e01598ea0921cca6e32639707/README.md",
+      "sha256": "7802c63d8e6238c11002b453a7f7550f26b5e8dc2be2de450f14c5af6247d2cc",
+      "bytes": 5834,
+      "status": 200
+    }
+  ],
+  "entries": [
+    {
+      "label": "buyer funding",
+      "to": "0x1eB8859F0b647E8ebEb38Af78E14C5d6d485b921",
+      "amountWei": "200000000000000",
+      "hash": "0xb79baf1a2f66cbfb565e291c2c2aa6d35cb2944e79c6afaa742148275f704a23",
+      "cliOutput": "Result:\n{\n  transactionHash: '0xb79baf1a2f66cbfb565e291c2c2aa6d35cb2944e79c6afaa742148275f704a23',\n  from: '0xaffE15eEc45b68835cc9E5B4Ab85dD5deaE8e70b',\n  to: '0x1eB8859F0b647E8ebEb38Af78E14C5d6d485b921',\n  amount: '0.0002 GEN',\n  blockNumber: '0',\n  gasUsed: '8000000'\n}"
+    },
+    {
+      "label": "provider funding",
+      "to": "0x432323C64b6A69185107c423936e10B185aDF75c",
+      "amountWei": "10000000000000",
+      "hash": "0x52d5ea978569699466089eb4d3e8a635872d1235cda40adb6ab3de71904e5478",
+      "cliOutput": "Result:\n{\n  transactionHash: '0x52d5ea978569699466089eb4d3e8a635872d1235cda40adb6ab3de71904e5478',\n  from: '0xaffE15eEc45b68835cc9E5B4Ab85dD5deaE8e70b',\n  to: '0x432323C64b6A69185107c423936e10B185aDF75c',\n  amount: '0.00001 GEN',\n  blockNumber: '0',\n  gasUsed: '8000000'\n}"
+    },
+    {
+      "label": "create",
+      "method": "create_agreement",
+      "args": [
+        "0x432323C64b6A69185107c423936e10B185aDF75c",
+        "ai_agent_delivery",
+        "Produce a factual one-paragraph report about SpecLock.",
+        [
+          {
+            "id": "c1",
+            "description": "The report identifies SpecLock as a single, standalone GenLayer Intelligent Contract.",
+            "priority": "required",
+            "evidence_method": "artifact:c1",
+            "target_url": "https://raw.githubusercontent.com/Chinny070/SpecLock/2c189122922b444e01598ea0921cca6e32639707/README.md"
+          },
+          {
+            "id": "c2",
+            "description": "The report identifies SpecLock as a single, standalone GenLayer Intelligent Contract.",
+            "priority": "optional",
+            "evidence_method": "artifact:c2",
+            "target_url": "https://raw.githubusercontent.com/Chinny070/SpecLock/2c189122922b444e01598ea0921cca6e32639707/README.md"
+          }
+        ],
+        0
+      ],
+      "signer": "0x1eB8859F0b647E8ebEb38Af78E14C5d6d485b921",
+      "valueWei": "0",
+      "hash": "0x90ddb401b31c4f9c99ad04fff163fb80f2f2bd634ccb6fd503025b2b12345fad",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": "5",
+      "error": null,
+      "votes": {
+        "0x17ac0CaefB18205c737e64ee582c9245A28ca1f9": "idle",
+        "0x40533175AfBbAee2c030F88259Afb5aEDbCF0E05": "idle",
+        "0x7bf4Ea55363bbe73A4dd5b3900bf03c978A63b6e": "agree",
+        "0x8Ce1805d6970d54748dE7160b5b395dCC5c71F44": "agree",
+        "0xa21bc502E3578E4b3039be8c59a257198f7c3f19": "agree"
+      }
+    },
+    {
+      "label": "accept",
+      "method": "accept_agreement",
+      "args": [
+        "5"
+      ],
+      "signer": "0x432323C64b6A69185107c423936e10B185aDF75c",
+      "valueWei": "0",
+      "hash": "0x58bacc0e3604b5247e148e8575853bfbb5019a124e08bcf70f7ae6408427bc6e",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": null,
+      "error": null,
+      "votes": {
+        "0x1242E9f5bf9b253327f130E8802b7b2F438A21Ef": "idle",
+        "0x8Ce1805d6970d54748dE7160b5b395dCC5c71F44": "idle",
+        "0x9244De5F20cB75A0c51d79A9A3208D00a99aFc10": "agree",
+        "0xb0925568bFbCF00aADBcA053E6D0E1628ff3d530": "agree",
+        "0xf29b6947ed298d139FC2655DB15D868C9AbB3091": "agree"
+      }
+    },
+    {
+      "label": "fund",
+      "method": "fund_agreement",
+      "args": [
+        "5",
+        100000000000000
+      ],
+      "signer": "0x1eB8859F0b647E8ebEb38Af78E14C5d6d485b921",
+      "valueWei": "100000000000000",
+      "hash": "0xc67bbcefd2cde1266037e3eb0ed782f6dbef33a0726bf87e45e2d77aafe98faf",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": true,
+      "error": null,
+      "votes": {
+        "0x1242E9f5bf9b253327f130E8802b7b2F438A21Ef": "agree",
+        "0x6a4179A851B3747A458baD2f089AB2EeFE0eBbAb": "agree",
+        "0x892C437da9b9CA0b6017B6f046F58E3526B46ec6": "idle",
+        "0xb0925568bFbCF00aADBcA053E6D0E1628ff3d530": "agree",
+        "0xe7eEe8a1c1690b0322d795B80A76ab2Cd1a0eAFd": "idle"
+      }
+    },
+    {
+      "label": "enable-warranty",
+      "method": "enable_warranty",
+      "args": [
+        "5",
+        1000
+      ],
+      "signer": "0x1eB8859F0b647E8ebEb38Af78E14C5d6d485b921",
+      "valueWei": "0",
+      "hash": "0x9cdc8f7de944a983a6839bd2696ecbd8c7f9d87dc8339ac70c368ea40d931226",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": null,
+      "error": null,
+      "votes": {
+        "0x0B50B270Eba5D9B780272C4Cf4720260177e761D": "idle",
+        "0x7bf4Ea55363bbe73A4dd5b3900bf03c978A63b6e": "idle",
+        "0x8a876C3F3a4783Bd123982bcBF3c672dc0239004": "agree",
+        "0xb0925568bFbCF00aADBcA053E6D0E1628ff3d530": "agree",
+        "0xf1C7551292319EE334e2D8A24eAC108Bd4C63b21": "agree"
+      }
+    },
+    {
+      "label": "buyer-accept-economic-terms",
+      "method": "accept_economic_terms",
+      "args": [
+        "5"
+      ],
+      "signer": "0x1eB8859F0b647E8ebEb38Af78E14C5d6d485b921",
+      "valueWei": "0",
+      "hash": "0x750c35856213b77e95f058d3f1257f6698c102b1a39c8a41352b756d2d7ab6a4",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": false,
+      "error": null,
+      "votes": {
+        "0x40533175AfBbAee2c030F88259Afb5aEDbCF0E05": "idle",
+        "0x5Bbbd7cdD63c0ba7f088038Cb049bDDAbE4F6fd1": "idle",
+        "0x8Ce1805d6970d54748dE7160b5b395dCC5c71F44": "agree",
+        "0xad7d13f269CeAd4379E64a1A3a0803a827e70B43": "agree",
+        "0xf1C7551292319EE334e2D8A24eAC108Bd4C63b21": "agree"
+      }
+    },
+    {
+      "label": "provider-accept-economic-terms",
+      "method": "accept_economic_terms",
+      "args": [
+        "5"
+      ],
+      "signer": "0x432323C64b6A69185107c423936e10B185aDF75c",
+      "valueWei": "0",
+      "hash": "0x07b4e8d2e2b705146618601030acf4babfe23ed9a2d4f5d51edc89089fba0768",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": true,
+      "error": null,
+      "votes": {
+        "0x0B50B270Eba5D9B780272C4Cf4720260177e761D": "agree",
+        "0x17ac0CaefB18205c737e64ee582c9245A28ca1f9": "agree",
+        "0x6a4179A851B3747A458baD2f089AB2EeFE0eBbAb": "idle",
+        "0x8Ce1805d6970d54748dE7160b5b395dCC5c71F44": "idle",
+        "0xf29b6947ed298d139FC2655DB15D868C9AbB3091": "agree"
+      }
+    },
+    {
+      "label": "freeze-buyer",
+      "method": "freeze_agreement",
+      "args": [
+        "5",
+        false
+      ],
+      "signer": "0x1eB8859F0b647E8ebEb38Af78E14C5d6d485b921",
+      "valueWei": "0",
+      "hash": "0xbcc9cd7dfa73a913f3c7617f134e6ed9ce26f948bacd1d7a532a3266115fc03c",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": null,
+      "error": null,
+      "votes": {
+        "0x17ac0CaefB18205c737e64ee582c9245A28ca1f9": "idle",
+        "0x892C437da9b9CA0b6017B6f046F58E3526B46ec6": "agree",
+        "0x8Ce1805d6970d54748dE7160b5b395dCC5c71F44": "agree",
+        "0x9244De5F20cB75A0c51d79A9A3208D00a99aFc10": "idle",
+        "0xf29b6947ed298d139FC2655DB15D868C9AbB3091": "agree"
+      }
+    },
+    {
+      "label": "c1-provider-raw",
+      "method": "submit_evidence",
+      "args": [
+        "5",
+        "https://raw.githubusercontent.com/Chinny070/SpecLock/2c189122922b444e01598ea0921cca6e32639707/README.md",
+        "7802c63d8e6238c11002b453a7f7550f26b5e8dc2be2de450f14c5af6247d2cc",
+        "{\"criterion_id\":\"c1\"}"
+      ],
+      "signer": "0x432323C64b6A69185107c423936e10B185aDF75c",
+      "valueWei": "0",
+      "hash": "0x37deb6d5592ae39d141c279a07952b29c18be44392d31ce2cb998996839cc31d",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": "5-ev6",
+      "error": null,
+      "votes": {
+        "0x1dEcE6A694520b1d3a2e24b9f28500858C756BDb": "agree",
+        "0x2FcBC452425f2F1e102c5c04b4331fcB46ee1c00": "agree",
+        "0x8a876C3F3a4783Bd123982bcBF3c672dc0239004": "agree",
+        "0x9244De5F20cB75A0c51d79A9A3208D00a99aFc10": "agree",
+        "0xA712cB25a4002666FA9D09477251f238dD9e06b3": "agree"
+      }
+    },
+    {
+      "label": "c1-buyer-cdn",
+      "method": "submit_evidence",
+      "args": [
+        "5",
+        "https://cdn.jsdelivr.net/gh/Chinny070/SpecLock@2c189122922b444e01598ea0921cca6e32639707/README.md",
+        "7802c63d8e6238c11002b453a7f7550f26b5e8dc2be2de450f14c5af6247d2cc",
+        "{\"criterion_id\":\"c1\"}"
+      ],
+      "signer": "0x1eB8859F0b647E8ebEb38Af78E14C5d6d485b921",
+      "valueWei": "0",
+      "hash": "0xa9d8d65f2362ced33fe47669d303080f7b8e534d87ca3b48653edea8162941a5",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": "5-ev7",
+      "error": null,
+      "votes": {
+        "0x2FcBC452425f2F1e102c5c04b4331fcB46ee1c00": "agree",
+        "0x892C437da9b9CA0b6017B6f046F58E3526B46ec6": "agree",
+        "0xa21bc502E3578E4b3039be8c59a257198f7c3f19": "agree",
+        "0xe7eEe8a1c1690b0322d795B80A76ab2Cd1a0eAFd": "agree",
+        "0xf29b6947ed298d139FC2655DB15D868C9AbB3091": "agree"
+      }
+    },
+    {
+      "label": "c2-buyer-raw",
+      "method": "submit_evidence",
+      "args": [
+        "5",
+        "https://raw.githubusercontent.com/Chinny070/SpecLock/2c189122922b444e01598ea0921cca6e32639707/README.md",
+        "7802c63d8e6238c11002b453a7f7550f26b5e8dc2be2de450f14c5af6247d2cc",
+        "{\"criterion_id\":\"c2\"}"
+      ],
+      "signer": "0x1eB8859F0b647E8ebEb38Af78E14C5d6d485b921",
+      "valueWei": "0",
+      "hash": "0xc14ebe662ae6ad4b271962e66879ff2f2832d3634644b2ce7dbd560cf7815ec5",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": "5-ev8",
+      "error": null,
+      "votes": {
+        "0x0B50B270Eba5D9B780272C4Cf4720260177e761D": "agree",
+        "0x1dEcE6A694520b1d3a2e24b9f28500858C756BDb": "agree",
+        "0x40533175AfBbAee2c030F88259Afb5aEDbCF0E05": "agree",
+        "0x5Bbbd7cdD63c0ba7f088038Cb049bDDAbE4F6fd1": "idle",
+        "0xa21bc502E3578E4b3039be8c59a257198f7c3f19": "idle"
+      }
+    },
+    {
+      "label": "c2-buyer-cdn-same-party",
+      "method": "submit_evidence",
+      "args": [
+        "5",
+        "https://cdn.jsdelivr.net/gh/Chinny070/SpecLock@2c189122922b444e01598ea0921cca6e32639707/README.md",
+        "7802c63d8e6238c11002b453a7f7550f26b5e8dc2be2de450f14c5af6247d2cc",
+        "{\"criterion_id\":\"c2\"}"
+      ],
+      "signer": "0x1eB8859F0b647E8ebEb38Af78E14C5d6d485b921",
+      "valueWei": "0",
+      "hash": "0xa8d7c4aac04c13ecd90975b6572527eb2c860b446b8a51ea71e52af33140ec6b",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": "5-ev9",
+      "error": null,
+      "votes": {
+        "0x1242E9f5bf9b253327f130E8802b7b2F438A21Ef": "agree",
+        "0x1dEcE6A694520b1d3a2e24b9f28500858C756BDb": "agree",
+        "0x6a4179A851B3747A458baD2f089AB2EeFE0eBbAb": "agree",
+        "0x9244De5F20cB75A0c51d79A9A3208D00a99aFc10": "agree",
+        "0xf1C7551292319EE334e2D8A24eAC108Bd4C63b21": "agree"
+      }
+    },
+    {
+      "label": "evaluate",
+      "method": "request_evaluation",
+      "args": [
+        "5"
+      ],
+      "signer": "0x432323C64b6A69185107c423936e10B185aDF75c",
+      "valueWei": "0",
+      "hash": "0xa3543f08b33e76abfa3ef11826658e856d6825d0b2f5a2f1a9de524d937c619a",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": "5-eval3",
+      "error": null,
+      "votes": {
+        "0x1242E9f5bf9b253327f130E8802b7b2F438A21Ef": "idle",
+        "0x17ac0CaefB18205c737e64ee582c9245A28ca1f9": "agree",
+        "0x5Bbbd7cdD63c0ba7f088038Cb049bDDAbE4F6fd1": "agree",
+        "0x8Ce1805d6970d54748dE7160b5b395dCC5c71F44": "agree",
+        "0xf1C7551292319EE334e2D8A24eAC108Bd4C63b21": "idle"
+      }
+    },
+    {
+      "label": "buyer-finalize",
+      "method": "finalize_verdict",
+      "args": [
+        "5"
+      ],
+      "signer": "0x1eB8859F0b647E8ebEb38Af78E14C5d6d485b921",
+      "valueWei": "0",
+      "hash": "0xf6bdd1a9fdd6feb0fd3d5baca56fd097c0abab8fcdd4d2d507cd3b8da050159a",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": false,
+      "error": null,
+      "votes": {
+        "0x0B50B270Eba5D9B780272C4Cf4720260177e761D": "agree",
+        "0x1dEcE6A694520b1d3a2e24b9f28500858C756BDb": "agree",
+        "0x9244De5F20cB75A0c51d79A9A3208D00a99aFc10": "agree",
+        "0xa21bc502E3578E4b3039be8c59a257198f7c3f19": "agree",
+        "0xf29b6947ed298d139FC2655DB15D868C9AbB3091": "agree"
+      }
+    },
+    {
+      "label": "provider-finalize",
+      "method": "finalize_verdict",
+      "args": [
+        "5"
+      ],
+      "signer": "0x432323C64b6A69185107c423936e10B185aDF75c",
+      "valueWei": "0",
+      "hash": "0x70018c2b01ab6dd7a83bb9fc5db60623a2160102f1d7992a95ffd58af9afc173",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": true,
+      "error": null,
+      "votes": {
+        "0x1dEcE6A694520b1d3a2e24b9f28500858C756BDb": "agree",
+        "0x2FcBC452425f2F1e102c5c04b4331fcB46ee1c00": "agree",
+        "0x5Bbbd7cdD63c0ba7f088038Cb049bDDAbE4F6fd1": "agree",
+        "0xad7d13f269CeAd4379E64a1A3a0803a827e70B43": "agree",
+        "0xb0925568bFbCF00aADBcA053E6D0E1628ff3d530": "agree"
+      }
+    },
+    {
+      "label": "settle",
+      "method": "settle",
+      "args": [
+        "5"
+      ],
+      "signer": "0x1eB8859F0b647E8ebEb38Af78E14C5d6d485b921",
+      "valueWei": "0",
+      "hash": "0x28631c49fa4cfc249dfafc6fd664251aec6417dbc6953cf51366071425b5a078",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": "5-st5",
+      "error": null,
+      "votes": {
+        "0x17ac0CaefB18205c737e64ee582c9245A28ca1f9": "agree",
+        "0x40533175AfBbAee2c030F88259Afb5aEDbCF0E05": "agree",
+        "0x5Bbbd7cdD63c0ba7f088038Cb049bDDAbE4F6fd1": "idle",
+        "0x8Ce1805d6970d54748dE7160b5b395dCC5c71F44": "agree",
+        "0xb0925568bFbCF00aADBcA053E6D0E1628ff3d530": "idle"
+      }
+    },
+    {
+      "label": "hostile-unrelated-warranty-evidence",
+      "method": "file_warranty_claim",
+      "args": [
+        "5",
+        "attempt to redirect holdback to unrelated source",
+        "https://www.rfc-editor.org/rfc/rfc2606.txt",
+        "b6869c8984701701bc2e6973b6ffc750d497f845cc1a65a106e9301590a13ab0",
+        "{\"criterion_id\":\"c1\"}"
+      ],
+      "signer": "0x1eB8859F0b647E8ebEb38Af78E14C5d6d485b921",
+      "valueWei": "500000000000",
+      "hash": "0x3ddcf03976fd5558f7758d71a656e161d608b65f352e2aca9abdc5dd8c5a79b0",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": "",
+      "error": null,
+      "votes": {
+        "0x17ac0CaefB18205c737e64ee582c9245A28ca1f9": "agree",
+        "0x7bf4Ea55363bbe73A4dd5b3900bf03c978A63b6e": "agree",
+        "0x8Ce1805d6970d54748dE7160b5b395dCC5c71F44": "agree",
+        "0xA712cB25a4002666FA9D09477251f238dD9e06b3": "agree",
+        "0xad7d13f269CeAd4379E64a1A3a0803a827e70B43": "agree"
+      }
+    },
+    {
+      "label": "refund-invalid-claim-bond",
+      "method": "withdraw",
+      "args": [],
+      "signer": "0x1eB8859F0b647E8ebEb38Af78E14C5d6d485b921",
+      "valueWei": "0",
+      "hash": "0xa8469518e7bf5163e5135ee779f4b3ea446f5c495bbef41ae7322f2f2278cc9b",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": 50500000000000,
+      "error": null,
+      "votes": {
+        "0x0B50B270Eba5D9B780272C4Cf4720260177e761D": "agree",
+        "0x1242E9f5bf9b253327f130E8802b7b2F438A21Ef": "agree",
+        "0x1dEcE6A694520b1d3a2e24b9f28500858C756BDb": "agree",
+        "0x892C437da9b9CA0b6017B6f046F58E3526B46ec6": "agree",
+        "0xf29b6947ed298d139FC2655DB15D868C9AbB3091": "agree"
+      }
+    },
+    {
+      "label": "same-subject-warranty-claim",
+      "method": "file_warranty_claim",
+      "args": [
+        "5",
+        "verify committed evidence subject and adjudicated claim",
+        "https://raw.githubusercontent.com/Chinny070/SpecLock/2c189122922b444e01598ea0921cca6e32639707/README.md",
+        "7802c63d8e6238c11002b453a7f7550f26b5e8dc2be2de450f14c5af6247d2cc",
+        "{\"criterion_id\":\"c1\"}"
+      ],
+      "signer": "0x1eB8859F0b647E8ebEb38Af78E14C5d6d485b921",
+      "valueWei": "500000000000",
+      "hash": "0xf81793e5b3ae7de8c9e90a183e72912ff7bf9f1d127e41cf388e4f1df2dd46d2",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": "5-wc1",
+      "error": null,
+      "votes": {
+        "0x1dEcE6A694520b1d3a2e24b9f28500858C756BDb": "agree",
+        "0x2FcBC452425f2F1e102c5c04b4331fcB46ee1c00": "idle",
+        "0x5Bbbd7cdD63c0ba7f088038Cb049bDDAbE4F6fd1": "idle",
+        "0xA712cB25a4002666FA9D09477251f238dD9e06b3": "agree",
+        "0xb0925568bFbCF00aADBcA053E6D0E1628ff3d530": "agree"
+      }
+    },
+    {
+      "label": "resolve-warranty-claim",
+      "method": "resolve_warranty_claim",
+      "args": [
+        "5"
+      ],
+      "signer": "0x432323C64b6A69185107c423936e10B185aDF75c",
+      "valueWei": "0",
+      "hash": "0xc40625be2bbc105c6ab6da0706d7777e7cc3c8646d7b6e2b51eeb206b6816e35",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": null,
+      "error": null,
+      "votes": {
+        "0x2FcBC452425f2F1e102c5c04b4331fcB46ee1c00": "idle",
+        "0x40533175AfBbAee2c030F88259Afb5aEDbCF0E05": "agree",
+        "0x8Ce1805d6970d54748dE7160b5b395dCC5c71F44": "agree",
+        "0x9244De5F20cB75A0c51d79A9A3208D00a99aFc10": "agree",
+        "0xA712cB25a4002666FA9D09477251f238dD9e06b3": "idle"
+      }
+    },
+    {
+      "label": "provider-final-warranty-credit",
+      "method": "withdraw",
+      "args": [],
+      "signer": "0x432323C64b6A69185107c423936e10B185aDF75c",
+      "valueWei": "0",
+      "hash": "0xefe15c5eafe1112061f7dfe93d8ffff395b88460461fc664ebb27c849a0dc954",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": 50500000000000,
+      "error": null,
+      "votes": {
+        "0x0B50B270Eba5D9B780272C4Cf4720260177e761D": "idle",
+        "0x5Bbbd7cdD63c0ba7f088038Cb049bDDAbE4F6fd1": "agree",
+        "0x892C437da9b9CA0b6017B6f046F58E3526B46ec6": "agree",
+        "0x8Ce1805d6970d54748dE7160b5b395dCC5c71F44": "agree",
+        "0xf29b6947ed298d139FC2655DB15D868C9AbB3091": "idle"
+      }
+    }
+  ],
+  "reads": [
+    {
+      "label": "after-economic-consent-freeze",
+      "method": "get_agreement",
+      "args": [
+        "5"
+      ],
+      "value": {
+        "agreement_id": "5",
+        "ambiguity_report": "[]",
+        "appeal_deadline_at": 0,
+        "buyer": "0x1eB8859F0b647E8ebEb38Af78E14C5d6d485b921",
+        "buyer_acknowledged_ambiguity": false,
+        "buyer_consents_expire": false,
+        "buyer_economic_terms_hash": "7f37522ad9a085e7a2fc55a401457f27439396099c234369dc5e49828d6c1133",
+        "buyer_ready_to_finalize": false,
+        "buyer_wants_procedural_review": false,
+        "delivery_deadline_at": 1792941878,
+        "frozen_at": 1792337078,
+        "funded_amount": 100000000000000,
+        "latest_appeal_id": "",
+        "latest_evaluation_id": "",
+        "latest_warranty_claim_id": "",
+        "milestones_defined": false,
+        "phase": "FROZEN",
+        "policy_id": "speclock-core",
+        "policy_version": 2,
+        "procedural_review_used": false,
+        "profile": "ai_agent_delivery",
+        "provider": "0x432323C64b6A69185107c423936e10B185aDF75c",
+        "provider_acknowledged_ambiguity": false,
+        "provider_consents_expire": false,
+        "provider_economic_terms_hash": "7f37522ad9a085e7a2fc55a401457f27439396099c234369dc5e49828d6c1133",
+        "provider_ready_to_finalize": false,
+        "provider_wants_procedural_review": false,
+        "refunded_amount": 0,
+        "released_amount": 0,
+        "resubmission_deadline_at": 0,
+        "resubmission_requested_at": 0,
+        "retained_amount": 0,
+        "settlement_id": "",
+        "spec_fingerprint": "927bd60d49ad32add459125a54638460d55c83ab9a990fe03c08a0e3dfd3d02a",
+        "uses_milestones": false,
+        "warranty_bps": 1000,
+        "warranty_deadline_at": 0,
+        "warranty_held_amount": 0,
+        "warranty_status": "NONE"
+      }
+    },
+    {
+      "label": "evaluated-agreement",
+      "method": "get_agreement",
+      "args": [
+        "5"
+      ],
+      "value": {
+        "agreement_id": "5",
+        "ambiguity_report": "[]",
+        "appeal_deadline_at": 1792510078,
+        "buyer": "0x1eB8859F0b647E8ebEb38Af78E14C5d6d485b921",
+        "buyer_acknowledged_ambiguity": false,
+        "buyer_consents_expire": false,
+        "buyer_economic_terms_hash": "7f37522ad9a085e7a2fc55a401457f27439396099c234369dc5e49828d6c1133",
+        "buyer_ready_to_finalize": false,
+        "buyer_wants_procedural_review": false,
+        "delivery_deadline_at": 1792941878,
+        "frozen_at": 1792337078,
+        "funded_amount": 100000000000000,
+        "latest_appeal_id": "",
+        "latest_evaluation_id": "5-eval3",
+        "latest_warranty_claim_id": "",
+        "milestones_defined": false,
+        "phase": "PROVISIONAL_VERDICT",
+        "policy_id": "speclock-core",
+        "policy_version": 2,
+        "procedural_review_used": false,
+        "profile": "ai_agent_delivery",
+        "provider": "0x432323C64b6A69185107c423936e10B185aDF75c",
+        "provider_acknowledged_ambiguity": false,
+        "provider_consents_expire": false,
+        "provider_economic_terms_hash": "7f37522ad9a085e7a2fc55a401457f27439396099c234369dc5e49828d6c1133",
+        "provider_ready_to_finalize": false,
+        "provider_wants_procedural_review": false,
+        "refunded_amount": 0,
+        "released_amount": 0,
+        "resubmission_deadline_at": 0,
+        "resubmission_requested_at": 0,
+        "retained_amount": 0,
+        "settlement_id": "",
+        "spec_fingerprint": "927bd60d49ad32add459125a54638460d55c83ab9a990fe03c08a0e3dfd3d02a",
+        "uses_milestones": false,
+        "warranty_bps": 1000,
+        "warranty_deadline_at": 0,
+        "warranty_held_amount": 0,
+        "warranty_status": "NONE"
+      }
+    },
+    {
+      "label": "evaluation",
+      "method": "get_evaluation",
+      "args": [
+        "5-eval3"
+      ],
+      "value": {
+        "agreement_id": "5",
+        "appeal_deadline_at": 1792510078,
+        "created_at": 1792337278,
+        "evaluation_id": "5-eval3",
+        "evidence_bindings": {
+          "c1": [
+            "5-ev6",
+            "5-ev7"
+          ],
+          "c2": [
+            "5-ev8",
+            "5-ev9"
+          ]
+        },
+        "evidence_snapshot_commitment": "0395ad7967ce01b7a0d8fa347aa75566f6865393117c965486d6d79f6b26089d",
+        "failure_attribution": "UNKNOWN",
+        "findings": [
+          {
+            "attribution": "UNKNOWN",
+            "criterion_id": "c1",
+            "finding": "PASS",
+            "rationale": "Excerpts directly state 'A single, standalone GenLayer Intelligent Contract' matching the criterion verbatim.",
+            "sufficiency": "SUFFICIENT"
+          },
+          {
+            "attribution": "UNKNOWN",
+            "criterion_id": "c2",
+            "finding": "PASS",
+            "rationale": "Excerpts explicitly open with 'A single, standalone GenLayer Intelligent Contract' matching the criterion verbatim. [auto-downgraded: all evidence for this criterion was did not come from both distinct parties and distinct hosts, so it is not independently corroborated]",
+            "sufficiency": "INSUFFICIENT"
+          }
+        ],
+        "overall_finding": "PARTIAL",
+        "profile": "ai_agent_delivery",
+        "round": 1,
+        "status": "PROVISIONAL"
+      }
+    },
+    {
+      "label": "settlement",
+      "method": "get_settlement",
+      "args": [
+        "5"
+      ],
+      "value": {
+        "refunded_to_buyer": 50000000000000,
+        "released_to_provider": 45000000000000,
+        "retained": 5000000000000,
+        "settlement_id": "5-st5",
+        "terminal_phase": "SETTLED"
+      }
+    },
+    {
+      "label": "refund-invalid-claim-bond:claimable",
+      "method": "get_claimable",
+      "args": [
+        "0x1eB8859F0b647E8ebEb38Af78E14C5d6d485b921"
+      ],
+      "value": 50500000000000
+    },
+    {
+      "label": "refund-invalid-claim-bond",
+      "claimableWei": "50500000000000",
+      "beforeWei": "99500000000000",
+      "afterWei": "150000000000000",
+      "balanceDeltaWei": "50500000000000",
+      "children": [
+        {
+          "hash": "0xa4f3791fa4636b158cbb904c1d56ddb96a9ed0da03a40d3c208b369abc5057d2",
+          "status": "FINALIZED",
+          "result_name": "NO_MAJORITY",
+          "value_credited": true,
+          "value": "50500000000000"
+        }
+      ]
+    },
+    {
+      "label": "warranty-claim",
+      "method": "get_warranty_claim",
+      "args": [
+        "5-wc1"
+      ],
+      "value": {
+        "agreement_id": "5",
+        "bond_amount": 500000000000,
+        "claim_id": "5-wc1",
+        "evidence_url": "https://raw.githubusercontent.com/Chinny070/SpecLock/2c189122922b444e01598ea0921cca6e32639707/README.md",
+        "grounds": "verify committed evidence subject and adjudicated claim",
+        "resolution": "REJECTED",
+        "resolution_evaluation_id": "5-wc1-eval"
+      }
+    },
+    {
+      "label": "provider-final-warranty-credit:claimable",
+      "method": "get_claimable",
+      "args": [
+        "0x432323C64b6A69185107c423936e10B185aDF75c"
+      ],
+      "value": 50500000000000
+    },
+    {
+      "label": "provider-final-warranty-credit",
+      "claimableWei": "50500000000000",
+      "beforeWei": "10000000000000",
+      "afterWei": "60500000000000",
+      "balanceDeltaWei": "50500000000000",
+      "children": [
+        {
+          "hash": "0x55d65f445211ba9fac46cbd9f05192f11fd38af56d4337a01902ba7cda731567",
+          "status": "FINALIZED",
+          "result_name": "NO_MAJORITY",
+          "value_credited": true,
+          "value": "50500000000000"
+        }
+      ]
+    },
+    {
+      "label": "buyer-final-warranty-credit:claimable",
+      "method": "get_claimable",
+      "args": [
+        "0x1eB8859F0b647E8ebEb38Af78E14C5d6d485b921"
+      ],
+      "value": 0
+    }
+  ],
+  "budget": {
+    "previousRecordedPrincipalWei": "18468000000000000",
+    "capWei": "20000000000000000",
+    "grossPrincipalWei": "18779000000000000",
+    "finalGrossPrincipalWei": "18779000000000000"
+  },
+  "notes": [
+    "The two URLs are CDN mirrors of the same pinned README commit, deliberately a host-string heuristic test and not claimed as independent source ownership."
+  ],
+  "agreementId": "5",
+  "evaluation": {
+    "agreement_id": "5",
+    "appeal_deadline_at": 1792510078,
+    "created_at": 1792337278,
+    "evaluation_id": "5-eval3",
+    "evidence_bindings": {
+      "c1": [
+        "5-ev6",
+        "5-ev7"
+      ],
+      "c2": [
+        "5-ev8",
+        "5-ev9"
+      ]
+    },
+    "evidence_snapshot_commitment": "0395ad7967ce01b7a0d8fa347aa75566f6865393117c965486d6d79f6b26089d",
+    "failure_attribution": "UNKNOWN",
+    "findings": [
+      {
+        "attribution": "UNKNOWN",
+        "criterion_id": "c1",
+        "finding": "PASS",
+        "rationale": "Excerpts directly state 'A single, standalone GenLayer Intelligent Contract' matching the criterion verbatim.",
+        "sufficiency": "SUFFICIENT"
+      },
+      {
+        "attribution": "UNKNOWN",
+        "criterion_id": "c2",
+        "finding": "PASS",
+        "rationale": "Excerpts explicitly open with 'A single, standalone GenLayer Intelligent Contract' matching the criterion verbatim. [auto-downgraded: all evidence for this criterion was did not come from both distinct parties and distinct hosts, so it is not independently corroborated]",
+        "sufficiency": "INSUFFICIENT"
+      }
+    ],
+    "overall_finding": "PARTIAL",
+    "profile": "ai_agent_delivery",
+    "round": 1,
+    "status": "PROVISIONAL"
+  },
+  "settlement": {
+    "refunded_to_buyer": 50000000000000,
+    "released_to_provider": 45000000000000,
+    "retained": 5000000000000,
+    "settlement_id": "5-st5",
+    "terminal_phase": "SETTLED"
+  },
+  "hostileWarrantyReturn": "",
+  "warrantyClaimId": "5-wc1",
+  "warrantyClaim": {
+    "agreement_id": "5",
+    "bond_amount": 500000000000,
+    "claim_id": "5-wc1",
+    "evidence_url": "https://raw.githubusercontent.com/Chinny070/SpecLock/2c189122922b444e01598ea0921cca6e32639707/README.md",
+    "grounds": "verify committed evidence subject and adjudicated claim",
+    "resolution": "REJECTED",
+    "resolution_evaluation_id": "5-wc1-eval"
+  },
+  "completedAt": "2026-10-18T15:42:52.018Z"
+}

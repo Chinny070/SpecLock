@@ -1,0 +1,40 @@
+{
+  "network": "GenLayer Studio Network",
+  "chainId": 61999,
+  "contract": "0xDFb69c1890F72c7b791A938ed36C5103582E6F19",
+  "sourceSha256": "CEC00C69E57E6AE1B70C77BE49CFFEEB912F2D55D15E42AF75A2B6687ABB6F5C",
+  "priorRecordedGrossPrincipalWei": "17038000000000000",
+  "cumulativeCapWei": "20000000000000000",
+  "actors": {
+    "buyer": "0xC6C5B7076E1581bc4ecb5aa283914175E811370e",
+    "provider": "0x3E6C40f771C8DA6d2D78dfa89d1Afb0bfBBBc2Aa"
+  },
+  "entries": [
+    {
+      "kind": "account_topup",
+      "label": "buyer test-account topup",
+      "from": "my-studionet-wallet",
+      "to": "0xC6C5B7076E1581bc4ecb5aa283914175E811370e",
+      "amountWei": "300000000000000",
+      "hash": "0x4b58a84db826c91e5f139609edf8ba9ac0b6ce390ff73973603751205d517a51",
+      "cliOutput": "Result:\n{\n  transactionHash: '0x4b58a84db826c91e5f139609edf8ba9ac0b6ce390ff73973603751205d517a51',\n  from: '0xaffE15eEc45b68835cc9E5B4Ab85dD5deaE8e70b',\n  to: '0xC6C5B7076E1581bc4ecb5aa283914175E811370e',\n  amount: '0.0003 GEN',\n  blockNumber: '0',\n  gasUsed: '8000000'\n}"
+    },
+    {
+      "kind": "account_topup",
+      "label": "provider test-account topup",
+      "from": "my-studionet-wallet",
+      "to": "0x3E6C40f771C8DA6d2D78dfa89d1Afb0bfBBBc2Aa",
+      "amountWei": "100000000000000",
+      "hash": "0xfdb9c5ca548a63693cb914690c0eccb7d8d0b2567103dd9db786d49d79dbee79",
+      "cliOutput": "Result:\n{\n  transactionHash: '0xfdb9c5ca548a63693cb914690c0eccb7d8d0b2567103dd9db786d49d79dbee79',\n  from: '0xaffE15eEc45b68835cc9E5B4Ab85dD5deaE8e70b',\n  to: '0x3E6C40f771C8DA6d2D78dfa89d1Afb0bfBBBc2Aa',\n  amount: '0.0001 GEN',\n  blockNumber: '0',\n  gasUsed: '8000000'\n}"
+    }
+  ],
+  "reads": [],
+  "budget": {
+    "grossPrincipalWei": "17438000000000000",
+    "lastCharge": {
+      "label": "provider test-account topup",
+      "amountWei": "100000000000000"
+    }
+  }
+}
