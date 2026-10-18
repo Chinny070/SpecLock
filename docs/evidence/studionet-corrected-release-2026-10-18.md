@@ -86,6 +86,30 @@ empty body (SHA-256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b785
 `0x9cfdcd518cafd4b0e6f0bc1243b8e13dd9b965a5976ad6bd7cb357f6a40590b1` increased buyer balance by exactly 50,000,000,000,000
 atto.
 
+## Normal-evaluation digest enforcement and sufficiency gate
+
+Agreement `12` used live `https://httpbin.org/json` (HTTP 200; fetched body SHA-256
+`bab3dfd2a6c992e4bf589eee05fc9650cc9d6988660b947a7a87b99420d108f9`). Criterion `digest-case` committed a deliberately
+different digest (`275291ade75b3b7abb15f921b32a12c1d6cf3a6a0355ed6fb24a255caac9f9d7`); criterion `insufficient-case`
+committed the actual fetched digest but defined no `expected_json` assertion. Evaluation
+`0x53e1b0963c1186b535cb1812ed204c8c3c058141cefb2dd6dfb68ed77a994f87` read `UNVERIFIABLE` overall. The first finding
+was `UNVERIFIABLE` / `EVIDENCE` with rationale “fetched evidence does not match the committed digest”; the second was
+`UNVERIFIABLE` / `INSUFFICIENT` with rationale “API criterion has no expected_json assertions”. Thus neither integrity-
+violating content nor insufficient criteria produced a payable PASS. Evidence submissions were
+`0xadda7f496746b8e2224dc16a9997184646bccec1f9a1083e547c4df52a6c87a4` (wrong digest) and
+`0xda2a4ee3f0b534baaa9dd473552d602014c0425fa291642e32c224631add64d3` (matching digest, no assertion). Agreement creation
+`0x2931a02b700bc1c3f7dd5aa8edfe4f21e6705964cc73ad15975e4ec940c6e106`, acceptance
+`0x9e3b8eea7352561e04a202b67c3fd5c8a34e2467e13a40fbe7abef003a380d14`, funding
+`0xfa24839fdc3bfe4892605e6847ce09a2cae5e5aa3d1a09cc7a62c40c877cc707`, and freeze
+`0xa84526a5ec0277f19ee34fbe474ff5c45e025895c3426d42272be5cceea1354d` succeeded. Mutual finalization transactions
+`0xaf80861d1ead0aca2818f78bc8c2cc74c48bc92a244dcf17f593507a761cf011` and
+`0x70e84262ec7079c78b1e3395e63ab6c5d991401543129449ae5f7afb3f3066af` succeeded. Settlement
+`0xb8103c5f7b1cc8e9351f20d2756ae300c738bde4cf49e21cc90f252a9caeaef7` entered recovery; recovery
+`0x5d0652ca9ec7605103e5fc3be63cabb0178c4db52d0b2dd356ecbc88d6aac79d` completed the refund. Replay reported
+`matches_recorded_settlement:true`, `recovery_applied:true`. Withdrawal
+`0x6905926a117cd209cd0afd1b447028b7b8e1c42ad60917db51fb801f817aaace` increased buyer balance by exactly 50,000,000,000,000
+atto.
+
 ## Incomplete probes and spending record
 
 Earlier one-shot probes left agreements `8` and `9` funded at 50,000,000,000,000 atto each without settlement. Agreement
@@ -94,6 +118,6 @@ harness incorrectly assumed the contract-wide milestone sequence reset for each 
 run reads its milestone ID from `get_milestones`. These are incomplete harness runs, not successful lifecycle evidence;
 the process-local signers were not persisted, leaving 100,000,000,000 atto unsettled. A separate warranty probe (agreement
 `6`) also left 10,000,000,000,000 atto claimable to its ephemeral buyer. Across this turn and prior runs the recorded test
-transfer principal totals 8,980,000,000,000,000 atto (0.00898 GEN); transaction fees were not itemized, so this is not an
+transfer principal totals 9,630,000,000,000,000 atto (0.00963 GEN); transaction fees were not itemized, so this is not an
 exact fee-inclusive total. Every individual transfer was no greater than 300,000,000,000,000 atto (0.0003 GEN), below the
 authorized 0.001 GEN per-transfer cap.
