@@ -1,5 +1,15 @@
 # SUBMISSION
 
+## Current candidate (before redeployment)
+
+The source now contains additional reviewer fixes: sufficiency-aware PARTIAL payouts with a defensive PASS invariant;
+immutable per-evaluation receipt bindings carried through appeals; warranty claims restricted to a final
+PASS/SUFFICIENT criterion and its explicit frozen `target_url`; two-sided ambiguity acknowledgement; symmetric
+warranty/milestone exclusion; and milestone-aware consumer views. These changes pass 94/94 Direct Mode tests, lint,
+and schema validation. They are not yet on the deployed contract, so the earlier Studionet evidence below does not
+prove this candidate. A new deployment and live verification are required before this candidate can be considered
+submission-ready.
+
 ## What SpecLock is
 
 A single canonical GenLayer Intelligent Contract (`contracts/speclock.py`) for universal digital-delivery agreement and adjudication, with two fully-implemented evaluation profiles (API delivery, AI-agent delivery) sharing one typed lifecycle/evidence/evaluation/appeal/settlement state machine.
@@ -83,7 +93,7 @@ are not counted as successful lifecycle outcomes.
 - **#35 — documented as the same mechanism as #14, not a distinct feature**, so the capability count is not misread as more distinct functionality than actually exists.
 - **#30 and #33 were implemented in a later pass** (commit `85d4f96`): milestones and warranty holdbacks have Direct Mode coverage and real Studionet lifecycle evidence. The latest `0xe52F…` release additionally verifies rejected-payable refunds and strict warranty digest binding. #33 remains `PARTIAL` only because the runtime has no trustworthy clock for a finite claim window; see the current matrix and deployment ledger.
 
-That earlier second audit deployment (`0xc758…`) finalized successfully. The current corrected source has 89 Direct Mode tests; the matrix has 34 capabilities marked verified and 4 partial. Corrected-source representative live cases, including the most recent milestone and recovery runs, are recorded in the deployment evidence ledger.
+That earlier second audit deployment (`0xc758…`) finalized successfully. Its release had 89 Direct Mode tests; the matrix had 34 capabilities marked verified and 4 partial. Corrected-source representative live cases, including milestone and recovery runs, are recorded in the deployment evidence ledger.
 
 ## Clean-clone verification (Gate D)
 
@@ -108,4 +118,4 @@ A full `git log --all -p` scan of this repository's history found one real expos
 7. **A disposable test-keystore password remains in historical Git.** It is redacted from current files but cannot be removed without rewriting history; do not reuse that test account. No private key or seed phrase was committed (`docs/SECURITY.md`).
 ## Submission verdict
 
-**Submission readiness: substantial verification is complete, but not unconditional.** The current corrected source passes 89/89 Direct Mode tests and GenVM lint/schema validation (45 methods); deployment `0xCEE0430CcC760f1Dce94d2E416CbeCe2b1CB8c79` finalized successfully and has real API/agent PASS/FAIL, escrow payout, warranty anti-redirection/claim resolution, milestone, normal-evaluation digest enforcement, sufficiency rejection, and recovery-aware replay evidence. Four capabilities (#12, #19, #21, #33) remain partial. The EVM payout callback limitation, 0.00011 GEN of stranded/unsettled value on this deployment, and historical test-password exposure warrant reviewer attention. Recorded cumulative test transfer principal is 0.00963 GEN; fees were not itemized, so this is not a fee-inclusive total. Gate D passed from a clean GitHub clone at `6cb9e27`; the only subsequent changes are documentation updates. SpecLock is not claimed 38/38 complete or unconditionally submission-ready.
+**Submission readiness: not yet established for the current candidate.** It passes 94/94 Direct Mode tests and GenVM lint/schema validation (45 methods), but candidate-specific Studionet deployment and lifecycle checks are pending. The prior deployed version at `0xCEE0430CcC760f1Dce94d2E416CbeCe2b1CB8c79` has representative API/agent, escrow, warranty, milestone, digest-enforcement, sufficiency, and recovery-aware replay evidence; that evidence does not transfer to the changed source. Four capabilities (#12, #19, #21, #33) remain partial. The EVM payout callback limitation, previously stranded value, and historical test-password exposure remain reviewer concerns. Recorded cumulative test transfer principal before this candidate is 0.00963 GEN; fees were not itemized, so this is not a fee-inclusive total. The candidate is not called 38/38 complete or submission-ready until its clean-clone and live acceptance gates pass.

@@ -1,5 +1,18 @@
 # Feature matrix — 38 numbered capabilities, full audit
 
+## Current reviewer-fix candidate status
+
+The following behavior is implemented and Direct Mode-verified in the current candidate, but awaits deployment and
+candidate-specific network verification: #13 PASS/SUFFICIENT-only proportional payments (ordinary and milestones);
+#17 bilateral ambiguity acknowledgement; #30 milestone completion consumer views; and #33 warranty eligibility bound
+to the final accepted evaluation, its PASS/SUFFICIENT finding, and an explicit frozen `target_url`. Every evaluation now
+stores its selected evidence receipt IDs, and appeal re-evaluations preserve bindings for unchallenged criteria. The
+warranty/milestone combination is rejected in either configuration order. Regression coverage is in
+`tests/direct/test_speclock_consensus.py`, `test_speclock_lifecycle.py`, `test_speclock_milestones.py`, and
+`test_speclock_warranty.py`; all 94 Direct Mode tests, GenVM lint, and schema validation pass. The prior on-chain
+evidence below belongs to the prior deployed source and does not prove these candidate changes. Deployment address,
+source hash, and live results will be appended only after actual verification.
+
 Status categories: `IMPLEMENTED_VERIFIED` (proven under a real, `FINALIZED`, multi-validator-consensus transaction on GenLayer Studio Network, with its actual on-chain return value or state read back and checked), `IMPLEMENTED_LOCAL_ONLY` (real contract code + passing Direct Mode tests, not live-verifiable for a structural reason explained in that row), `PARTIAL` (a real, incomplete implementation), `NOT_IMPLEMENTED` (honestly not built).
 
 ## Release-specific evidence correction (2026-10-18)

@@ -8,7 +8,7 @@ def _funded_agreement(contract, direct_vm, buyer, provider, amount=1000):
     direct_vm.sender = buyer
     agreement_id = contract.create_agreement(
         provider, "api_delivery", "Deliver GET /health",
-        [{"id": "c1", "description": "GET /health returns status ok", "priority": "required", "evidence_method": "http:c1", "expected_json": {"status": "ok"}}],
+        [{"id": "c1", "description": "GET /health returns status ok", "priority": "required", "evidence_method": "http:c1", "expected_json": {"status": "ok"}, "target_url": "https://api.example.com/health"}],
         1,
     )
     direct_vm.sender = provider
@@ -301,3 +301,57 @@ def test_unrelated_correctly_hashed_failing_warranty_evidence_is_refunded(direct
     assert contract.get_agreement(agreement_id)["warranty_status"] == "HELD"
     from genlayer.py.types import Address
     assert contract.get_claimable(str(Address(bytes(direct_alice)))) == 20
+
+
+def test_warranty_uses_only_the_receipt_bound_to_the_accepted_verdict(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy(CONTRACT)
+    agreement_id = _funded_agreement(contract, direct_vm, direct_alice, direct_bob)
+    direct_vm.sender = direct_alice
+    contract.enable_warranty(agreement_id, 2000)
+    direct_vm.sender = direct_bob
+    contract.accept_economic_terms(agreement_id)
+    direct_vm.sender = direct_alice
+    contract.freeze_agreement(agreement_id, False)
+
+    failing_a = json.dumps({"status": "failed"})
+    passing_b = json.dumps({"status": "ok"})
+    direct_vm.sender = direct_bob
+    receipt_a = contract.submit_evidence(
+        agreement_id, "https://attacker.example.net/health", hashlib.sha256(failing_a.encode()).hexdigest(),
+        json.dumps({"criterion_id": "c1"}),
+    )
+    receipt_b = contract.submit_evidence(
+        agreement_id, "https://api.example.com/health", hashlib.sha256(passing_b.encode()).hexdigest(),
+        json.dumps({"criterion_id": "c1"}),
+    )
+    direct_vm.mock_web(r".*api\.example.com/health.*", {"status": 200, "body": passing_b})
+    evaluation_id = contract.request_evaluation(agreement_id)
+    evaluation = contract.get_evaluation(evaluation_id)
+    assert evaluation["findings"][0]["finding"] == "PASS"
+    assert evaluation["evidence_bindings"]["c1"] == [receipt_b]
+    assert receipt_a not in evaluation["evidence_bindings"]["c1"]
+
+    direct_vm.sender = direct_alice
+    contract.finalize_verdict(agreement_id)
+    direct_vm.sender = direct_bob
+    contract.finalize_verdict(agreement_id)
+    contract.settle(agreement_id)
+
+    hostile = json.dumps({"status": "failed"})
+    direct_vm.sender = direct_alice
+    direct_vm.value = 20
+    assert contract.file_warranty_claim(
+        agreement_id, "redirect to stale receipt", "https://attacker.example.net/health",
+        hashlib.sha256(hostile.encode()).hexdigest(), json.dumps({"criterion_id": "c1"}),
+    ) == ""
+    direct_vm.value = 0
+    assert contract.get_agreement(agreement_id)["warranty_status"] == "HELD"
+
+    direct_vm.sender = direct_alice
+    direct_vm.value = 20
+    claim_id = contract.file_warranty_claim(
+        agreement_id, "accepted delivery is broken", "https://api.example.com/health",
+        hashlib.sha256(hostile.encode()).hexdigest(), json.dumps({"criterion_id": "c1"}),
+    )
+    direct_vm.value = 0
+    assert claim_id

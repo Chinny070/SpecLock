@@ -98,7 +98,20 @@ def test_ambiguity_detected_before_freeze_and_blocks_without_ack(direct_vm, dire
         contract.freeze_agreement(agreement_id, False)
 
     contract.freeze_agreement(agreement_id, True)
-    assert contract.get_agreement(agreement_id)["phase"] == "FROZEN"
+    state = contract.get_agreement(agreement_id)
+    assert state["phase"] == "FUNDED"
+    assert state["buyer_acknowledged_ambiguity"] is True
+    assert state["provider_acknowledged_ambiguity"] is False
+    from genlayer.py.types import Address
+    direct_vm.sender = Address(bytes([0x99]) * 20)
+    with direct_vm.expect_revert():
+        contract.freeze_agreement(agreement_id, True)  # unrelated address cannot acknowledge either role
+
+    direct_vm.sender = direct_bob
+    contract.freeze_agreement(agreement_id, True)
+    state = contract.get_agreement(agreement_id)
+    assert state["phase"] == "FROZEN"
+    assert state["provider_acknowledged_ambiguity"] is True
 
 
 def test_duplicate_criterion_ids_rejected(direct_vm, direct_deploy, direct_alice, direct_bob):

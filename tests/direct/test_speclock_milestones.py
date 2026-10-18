@@ -21,8 +21,8 @@ def _funded_two_criteria_agreement(contract, direct_vm, buyer, provider, amount=
     agreement_id = contract.create_agreement(
         provider, "api_delivery", "Deliver two independent endpoints",
         [
-            {"id": "c1", "description": "GET /health returns status ok", "priority": "required", "evidence_method": "http:c1", "expected_json": {"status": "ok"}},
-            {"id": "c2", "description": "GET /version returns version string", "priority": "required", "evidence_method": "http:c2", "expected_json": {"version": "1.0"}},
+            {"id": "c1", "description": "GET /health returns status ok", "priority": "required", "evidence_method": "http:c1", "expected_json": {"status": "ok"}, "target_url": "https://api.example.com/health"},
+            {"id": "c2", "description": "GET /version returns version string", "priority": "required", "evidence_method": "http:c2", "expected_json": {"version": "1.0"}, "target_url": "https://api.example.com/version"},
         ],
         1,
     )
@@ -165,6 +165,10 @@ def test_milestones_independent_evaluation_and_settlement_fund_conservation(dire
     assert summary["all_complete"] is True
     assert summary["completed_count"] == 2
     assert summary["released_amount"] + summary["refunded_amount"] == 1000
+    assert contract.is_final(agreement_id) is True
+    assert contract.is_consumable(agreement_id) is False
+    assert contract.get_verdict(agreement_id) == "MILESTONE_BASED: see get_milestone_summary"
+    assert contract.verify_settlement_replay(agreement_id)["matches_recorded_settlement"] is True
 
     from genlayer.py.types import Address
     assert contract.get_claimable(str(Address(bytes(direct_bob)))) == 600  # provider got ms1's release
@@ -265,3 +269,82 @@ def test_define_milestones_rejects_wrong_phase_and_bad_criterion_id(direct_vm, d
 
     with direct_vm.expect_revert():
         contract.define_milestones(agreement_id, [{"criteria_ids": [], "amount": 100}])  # empty criteria list
+
+
+def test_warranty_then_milestones_is_rejected_without_changing_terms(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy(CONTRACT)
+    agreement_id = _funded_two_criteria_agreement(contract, direct_vm, direct_alice, direct_bob)
+    direct_vm.sender = direct_alice
+    contract.enable_warranty(agreement_id, 2000)
+    before = contract.get_agreement(agreement_id)
+    with direct_vm.expect_revert():
+        contract.define_milestones(agreement_id, [
+            {"criteria_ids": ["c1"], "amount": 500}, {"criteria_ids": ["c2"], "amount": 500},
+        ])
+    after = contract.get_agreement(agreement_id)
+    assert after["warranty_bps"] == 2000
+    assert after["milestones_defined"] is False
+    assert after["buyer_economic_terms_hash"] == before["buyer_economic_terms_hash"]
+    assert after["provider_economic_terms_hash"] == before["provider_economic_terms_hash"]
+
+
+def test_milestones_then_warranty_is_rejected_without_changing_allocations(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy(CONTRACT)
+    agreement_id = _funded_two_criteria_agreement(contract, direct_vm, direct_alice, direct_bob)
+    direct_vm.sender = direct_alice
+    milestone_ids = contract.define_milestones(agreement_id, [
+        {"criteria_ids": ["c1"], "amount": 500}, {"criteria_ids": ["c2"], "amount": 500},
+    ])
+    before = [contract.get_milestone(mid)["allocated_amount"] for mid in milestone_ids]
+    agreement_before = contract.get_agreement(agreement_id)
+    with direct_vm.expect_revert():
+        contract.enable_warranty(agreement_id, 2000)
+    after = contract.get_agreement(agreement_id)
+    assert after["warranty_bps"] == 0
+    assert after["buyer_economic_terms_hash"] == agreement_before["buyer_economic_terms_hash"]
+    assert after["provider_economic_terms_hash"] == agreement_before["provider_economic_terms_hash"]
+    assert [contract.get_milestone(mid)["allocated_amount"] for mid in milestone_ids] == before
+
+
+def test_milestone_partial_settlement_excludes_pass_with_insufficient_evidence(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy(CONTRACT)
+    direct_vm.sender = direct_alice
+    agreement_id = contract.create_agreement(
+        direct_bob, "ai_agent_delivery", "Milestone with sufficient and insufficient findings",
+        [
+            {"id": "c1", "description": "Required output is complete", "priority": "required", "evidence_method": "artifact"},
+            {"id": "c2", "description": "Optional output is complete", "priority": "optional", "evidence_method": "artifact"},
+        ], 0,
+    )
+    direct_vm.sender = direct_bob
+    contract.accept_agreement(agreement_id)
+    direct_vm.sender = direct_alice
+    direct_vm.value = 1000
+    contract.fund_agreement(agreement_id, 1000)
+    direct_vm.value = 0
+    [milestone_id] = contract.define_milestones(agreement_id, [
+        {"criteria_ids": ["c1", "c2"], "amount": 1000},
+    ])
+    direct_vm.sender = direct_bob
+    contract.accept_economic_terms(agreement_id)
+    direct_vm.sender = direct_alice
+    contract.freeze_agreement(agreement_id, False)
+    direct_vm.sender = direct_bob
+    for cid in ("c1", "c2"):
+        body = f"evidence-{cid}"
+        url = f"https://files.example.com/{cid}"
+        direct_vm.mock_web(url, {"status": 200, "body": body})
+        contract.submit_evidence(agreement_id, url, hashlib.sha256(body.encode()).hexdigest(), json.dumps({"criterion_id": cid}))
+    direct_vm.mock_llm(r".*Criterion: Required output.*", json.dumps({"finding": "PASS", "sufficiency": "SUFFICIENT", "rationale": "complete"}))
+    direct_vm.mock_llm(r".*Criterion: Optional output.*", json.dumps({"finding": "PASS", "sufficiency": "INSUFFICIENT", "rationale": "weak"}))
+    evaluation_id = contract.request_milestone_evaluation(agreement_id, milestone_id)
+    evaluation = contract.get_evaluation(evaluation_id)
+    assert evaluation["overall_finding"] == "PARTIAL"
+    direct_vm.sender = direct_alice
+    assert contract.finalize_milestone(agreement_id, milestone_id) is False
+    direct_vm.sender = direct_bob
+    assert contract.finalize_milestone(agreement_id, milestone_id) is True
+    contract.settle_milestone(agreement_id, milestone_id)
+    milestone = contract.get_milestone(milestone_id)
+    assert milestone["released_amount"] == 500
+    assert milestone["refunded_amount"] == 500

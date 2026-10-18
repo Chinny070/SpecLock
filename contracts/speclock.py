@@ -335,6 +335,8 @@ class Agreement:
     provider_ready_to_finalize: bool
     buyer_consents_expire: bool
     provider_consents_expire: bool
+    buyer_acknowledged_ambiguity: bool
+    provider_acknowledged_ambiguity: bool
     latest_evaluation_id: str
     latest_appeal_id: str
     settlement_id: str
@@ -374,6 +376,7 @@ class Evaluation:
     round: u256
     profile: str
     evidence_snapshot_commitment: str
+    evidence_bindings_json: str  # immutable criterion_id -> receipt_id list used by this evaluation
     findings_json: str  # JSON array of {criterion_id, finding, sufficiency, rationale, attribution}
     overall_finding: str
     failure_attribution: str
@@ -585,6 +588,10 @@ class SpecLock(gl.Contract):
             evidence_method = str(c.get("evidence_method", "manual"))
             expected_json = c.get("expected_json", {})
             expected_status = c.get("expected_status", 200)
+            target_url = c.get("target_url", "")
+            if target_url:
+                self._require(isinstance(target_url, str), f"criterion {cid} target_url must be a string")
+                _validate_url(target_url)
             if profile == PROFILE_API:
                 self._require(isinstance(expected_json, dict), f"criterion {cid} expected_json must be an object")
                 self._require(
@@ -603,6 +610,7 @@ class SpecLock(gl.Contract):
                     "evidence_method": evidence_method,
                     "expected_json": expected_json if isinstance(expected_json, dict) else {},
                     "expected_status": expected_status if isinstance(expected_status, int) else 200,
+                    "target_url": target_url,
                 }
             )
         return json.dumps(compiled, sort_keys=True), json.dumps(ambiguous, sort_keys=True)
@@ -702,6 +710,8 @@ class SpecLock(gl.Contract):
             provider_ready_to_finalize=False,
             buyer_consents_expire=False,
             provider_consents_expire=False,
+            buyer_acknowledged_ambiguity=False,
+            provider_acknowledged_ambiguity=False,
             latest_evaluation_id="",
             latest_appeal_id="",
             settlement_id="",
@@ -785,6 +795,16 @@ class SpecLock(gl.Contract):
         caller = gl.message.sender_address
         self._require(caller == agreement.buyer, "only the buyer may enable warranty")
         self._require(not agreement.uses_milestones, "warranty is not yet supported for milestone-based agreements")
+        if agreement.profile == PROFILE_API:
+            self._require(
+                all(bool(c.get("target_url")) for c in json.loads(agreement.criteria_json)),
+                "warranty requires an agreed target_url for every criterion",
+            )
+        else:
+            self._require(
+                all(bool(c.get("target_url")) for c in json.loads(agreement.criteria_json)),
+                "warranty requires an agreed deliverable target_url for every criterion",
+            )
         self._require(int(agreement.warranty_bps) == 0, "warranty already configured for this agreement")
         self._require(1 <= warranty_bps <= MAX_WARRANTY_BPS, "warranty_bps out of bounds")
         agreement.warranty_bps = u256(warranty_bps)
@@ -821,7 +841,7 @@ class SpecLock(gl.Contract):
         caller = gl.message.sender_address
         self._require(caller == agreement.buyer, "only the buyer may define milestones")
         self._require(not agreement.milestones_defined, "milestones already defined for this agreement")
-        self._require(agreement.warranty_status == "NONE", "warranty is not yet supported for milestone-based agreements")
+        self._require(int(agreement.warranty_bps) == 0, "warranty is not supported for milestone-based agreements")
         self._require(1 <= len(milestone_specs) <= MAX_MILESTONES, "milestone count out of bounds")
 
         all_criteria_ids = {c["id"] for c in json.loads(agreement.criteria_json)}
@@ -890,6 +910,15 @@ class SpecLock(gl.Contract):
             # acknowledge_ambiguity=True once the deterministic compiler has
             # flagged a report; a call without it is rejected.
             self._require(acknowledge_ambiguity, "ambiguity report is non-empty; freeze requires explicit acknowledgement")
+            if caller == agreement.buyer:
+                self._require(not agreement.buyer_acknowledged_ambiguity, "buyer already acknowledged ambiguity")
+                agreement.buyer_acknowledged_ambiguity = True
+            else:
+                self._require(not agreement.provider_acknowledged_ambiguity, "provider already acknowledged ambiguity")
+                agreement.provider_acknowledged_ambiguity = True
+            if not (agreement.buyer_acknowledged_ambiguity and agreement.provider_acknowledged_ambiguity):
+                self.agreements[agreement_id] = agreement
+                return
         agreement.phase = PHASE_FROZEN
         agreement.frozen_at = u256(self._next_seq())
         self.agreements[agreement_id] = agreement
@@ -994,21 +1023,27 @@ class SpecLock(gl.Contract):
         return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
 
     def _warranty_claim_criterion(self, agreement: Agreement, evidence_url: str, metadata_json: str) -> str:
-        """Return the criterion only when claim URL is a frozen service URL."""
+        """Accept only the exact subject in the accepted evaluation binding."""
         criterion_id = _criterion_id_from_metadata(metadata_json)
-        if not criterion_id or not any(
-            c["id"] == criterion_id for c in json.loads(agreement.criteria_json)
-        ):
+        if not criterion_id or agreement.latest_evaluation_id == "":
             return ""
-        evidence_ids = list(self.evidence_index[agreement.agreement_id]) if agreement.agreement_id in self.evidence_index else []
-        for evidence_id in evidence_ids:
-            evidence = self.evidence[evidence_id]
-            if (
-                evidence.status == "FROZEN"
-                and _criterion_id_from_metadata(evidence.metadata_json) == criterion_id
-                and evidence.url == evidence_url
-            ):
-                return criterion_id
+        accepted = self.evaluations[agreement.latest_evaluation_id]
+        if accepted.status != "FINAL":
+            return ""
+        findings = {f["criterion_id"]: f for f in json.loads(accepted.findings_json)}
+        finding = findings.get(criterion_id, {})
+        if finding.get("finding") != FINDING_PASS or finding.get("sufficiency") != SUFFICIENCY_SUFFICIENT:
+            return ""
+        criteria = {c["id"]: c for c in json.loads(agreement.criteria_json)}
+        criterion = criteria.get(criterion_id)
+        if not criterion or not criterion.get("target_url") or criterion["target_url"] != evidence_url:
+            return ""
+        bindings = json.loads(accepted.evidence_bindings_json).get(criterion_id, [])
+        for receipt_id in bindings:
+            if receipt_id in self.evidence:
+                receipt = self.evidence[receipt_id]
+                if receipt.status == "FROZEN" and receipt.url == evidence_url:
+                    return criterion_id
         return ""
 
     def _freeze_all_evidence(self, agreement_id: str) -> None:
@@ -1026,7 +1061,7 @@ class SpecLock(gl.Contract):
     def request_evaluation(self, agreement_id: str) -> str:
         return self._request_evaluation_impl(agreement_id, restrict_to_ids=None, carry_forward_findings=None)
 
-    def _request_evaluation_impl(self, agreement_id: str, restrict_to_ids, carry_forward_findings) -> str:
+    def _request_evaluation_impl(self, agreement_id: str, restrict_to_ids, carry_forward_findings, carry_forward_bindings=None) -> str:
         """Capability 26: `resolve_appeal` calls this with `restrict_to_ids`
         set to only the specifically-challenged criterion ids, and
         `carry_forward_findings` set to the prior (challenged) evaluation's
@@ -1062,9 +1097,11 @@ class SpecLock(gl.Contract):
             result = self._evaluate_agent_profile(criteria_to_judge, evidence_recs)
 
         new_findings = result["findings"]
+        evidence_bindings = result["evidence_bindings"]
         if carry_forward_findings is not None:
             new_ids = {f["criterion_id"] for f in new_findings}
             findings = [f for f in carry_forward_findings if f["criterion_id"] not in new_ids] + new_findings
+            evidence_bindings = {**(carry_forward_bindings or {}), **evidence_bindings}
         else:
             findings = new_findings
         ambiguous_ids = {a["criterion_id"] for a in json.loads(agreement.ambiguity_report)}
@@ -1081,6 +1118,7 @@ class SpecLock(gl.Contract):
             round=u256(round_no),
             profile=agreement.profile,
             evidence_snapshot_commitment=snapshot,
+            evidence_bindings_json=json.dumps(evidence_bindings, sort_keys=True),
             findings_json=json.dumps(findings, sort_keys=True),
             overall_finding=overall,
             failure_attribution=attribution,
@@ -1170,9 +1208,13 @@ class SpecLock(gl.Contract):
 
     def _evaluate_api_profile(self, criteria: list, evidence_recs: list, enforce_digest: bool = False) -> dict:
         findings = []
+        evidence_bindings = {}
         for c in criteria:
             probe_evidence = [e for e in evidence_recs if _criterion_id_from_metadata(e.metadata_json) == c["id"]]
+            if c.get("target_url"):
+                probe_evidence = [e for e in probe_evidence if e.url == c["target_url"]]
             if not probe_evidence:
+                evidence_bindings[c["id"]] = []
                 findings.append(
                     {
                         "criterion_id": c["id"],
@@ -1188,6 +1230,7 @@ class SpecLock(gl.Contract):
             # take effect on re-evaluation, rather than always re-probing the
             # first (possibly stale/wrong) evidence ever submitted.
             finding, sufficiency, rationale, attribution = self._probe_api_criterion(c, probe_evidence[-1], enforce_digest=True)
+            evidence_bindings[c["id"]] = [probe_evidence[-1].receipt_id]
             findings.append(
                 {
                     "criterion_id": c["id"],
@@ -1197,7 +1240,7 @@ class SpecLock(gl.Contract):
                     "attribution": attribution,
                 }
             )
-        return {"findings": findings}
+        return {"findings": findings, "evidence_bindings": evidence_bindings}
 
     def _probe_api_criterion(self, criterion: dict, evidence: "EvidenceReceipt", enforce_digest: bool = False) -> tuple:
         """Reachability vs functional correctness (never collapse a 200 into
@@ -1266,9 +1309,11 @@ class SpecLock(gl.Contract):
 
     def _evaluate_agent_profile(self, criteria: list, evidence_recs: list, enforce_digest: bool = False) -> dict:
         findings = []
+        evidence_bindings = {}
         for c in criteria:
             matching = [e for e in evidence_recs if _criterion_id_from_metadata(e.metadata_json) == c["id"]]
             if not matching:
+                evidence_bindings[c["id"]] = []
                 findings.append(
                     {
                         "criterion_id": c["id"],
@@ -1282,6 +1327,7 @@ class SpecLock(gl.Contract):
             finding, sufficiency, rationale, attribution = self._judge_agent_criterion(
                 c, matching, enforce_digest=True
             )
+            evidence_bindings[c["id"]] = [e.receipt_id for e in matching]
             findings.append(
                 {
                     "criterion_id": c["id"],
@@ -1291,7 +1337,7 @@ class SpecLock(gl.Contract):
                     "attribution": attribution,
                 }
             )
-        return {"findings": findings}
+        return {"findings": findings, "evidence_bindings": evidence_bindings}
 
     def _fetch_agent_evidence_excerpt(self, url: str, expected_digest: str = "") -> dict:
         """Independently fetch one evidence artifact's real content, bounded
@@ -1531,7 +1577,8 @@ class SpecLock(gl.Contract):
         # forward verbatim rather than re-running the full semantic
         # judgment for criteria nobody disputed.
         new_evaluation_id = self._request_evaluation_impl(
-            agreement_id, restrict_to_ids=challenged_ids, carry_forward_findings=old_findings
+            agreement_id, restrict_to_ids=challenged_ids, carry_forward_findings=old_findings,
+            carry_forward_bindings=json.loads(old_eval.evidence_bindings_json),
         )
 
         new_eval = self.evaluations[new_evaluation_id]
@@ -1703,12 +1750,25 @@ class SpecLock(gl.Contract):
         is genuinely the same math `settle()` would perform, not a
         reimplementation that could silently diverge."""
         if evaluation.overall_finding == FINDING_PASS:
+            findings = json.loads(evaluation.findings_json)
+            self._require(
+                bool(findings) and all(
+                    f["finding"] == FINDING_PASS
+                    and f["sufficiency"] == SUFFICIENCY_SUFFICIENT
+                    for f in findings
+                ),
+                "PASS settlement requires sufficient evidence for every criterion",
+            )
             return funded, 0, 0, PHASE_SETTLED
         if evaluation.overall_finding == FINDING_FAIL:
             return 0, funded, 0, PHASE_SETTLED
         if evaluation.overall_finding == FINDING_PARTIAL:
             findings = json.loads(evaluation.findings_json)
-            passed = sum(1 for f in findings if f["finding"] == FINDING_PASS)
+            passed = sum(
+                1 for f in findings
+                if f["finding"] == FINDING_PASS
+                and f["sufficiency"] == SUFFICIENCY_SUFFICIENT
+            )
             total = max(1, len(findings))
             released = (funded * passed) // total
             refunded = funded - released
@@ -1864,6 +1924,11 @@ class SpecLock(gl.Contract):
         self._require(agreement.warranty_status == "CLAIMED", "no warranty claim pending resolution")
         claim = self.warranty_claims[agreement.latest_warranty_claim_id]
         self._require(claim.resolution == "FILED_UNADJUDICATED", "warranty claim already resolved")
+        self._require(
+            self._warranty_claim_criterion(agreement, claim.evidence_url, claim.evidence_metadata_json)
+            == claim.criterion_id,
+            "warranty claim no longer matches the accepted sufficient delivery evidence",
+        )
 
         receipt = EvidenceReceipt(
             receipt_id=f"{claim.claim_id}-ev",
@@ -1876,6 +1941,8 @@ class SpecLock(gl.Contract):
             status="FROZEN",
             submitted_at=u256(self._next_seq()),
         )
+        self.evidence[receipt.receipt_id] = receipt
+        self.evidence_index.get_or_insert_default(agreement_id).append(receipt.receipt_id)
         all_criteria = [
             criterion for criterion in json.loads(agreement.criteria_json)
             if criterion["id"] == claim.criterion_id
@@ -1897,6 +1964,7 @@ class SpecLock(gl.Contract):
             round=u256(0),
             profile=agreement.profile,
             evidence_snapshot_commitment=hashlib.sha256(claim.evidence_digest.encode()).hexdigest(),
+            evidence_bindings_json=json.dumps({claim.criterion_id: [receipt.receipt_id]}, sort_keys=True),
             findings_json=json.dumps(findings, sort_keys=True),
             overall_finding=overall,
             failure_attribution=attribution,
@@ -2012,6 +2080,7 @@ class SpecLock(gl.Contract):
             round=u256(1),
             profile=agreement.profile,
             evidence_snapshot_commitment=snapshot,
+            evidence_bindings_json=json.dumps(result["evidence_bindings"], sort_keys=True),
             findings_json=json.dumps(findings, sort_keys=True),
             overall_finding=overall,
             failure_attribution=attribution,
@@ -2127,6 +2196,8 @@ class SpecLock(gl.Contract):
             "provider_ready_to_finalize": a.provider_ready_to_finalize,
             "buyer_consents_expire": a.buyer_consents_expire,
             "provider_consents_expire": a.provider_consents_expire,
+            "buyer_acknowledged_ambiguity": a.buyer_acknowledged_ambiguity,
+            "provider_acknowledged_ambiguity": a.provider_acknowledged_ambiguity,
             "buyer_wants_procedural_review": a.buyer_wants_procedural_review,
             "provider_wants_procedural_review": a.provider_wants_procedural_review,
             "procedural_review_used": a.procedural_review_used,
@@ -2214,6 +2285,7 @@ class SpecLock(gl.Contract):
             "round": int(e.round),
             "profile": e.profile,
             "evidence_snapshot_commitment": e.evidence_snapshot_commitment,
+            "evidence_bindings": json.loads(e.evidence_bindings_json),
             "findings": json.loads(e.findings_json),
             "overall_finding": e.overall_finding,
             "failure_attribution": e.failure_attribution,
@@ -2253,6 +2325,8 @@ class SpecLock(gl.Contract):
     @gl.public.view
     def get_verdict(self, agreement_id: str) -> str:
         a = self._get_agreement(agreement_id)
+        if a.uses_milestones:
+            return "MILESTONE_BASED: see get_milestone_summary"
         if a.latest_evaluation_id == "":
             return "NONE"
         return self.evaluations[a.latest_evaluation_id].overall_finding
@@ -2416,11 +2490,17 @@ class SpecLock(gl.Contract):
 
     @gl.public.view
     def is_final(self, agreement_id: str) -> bool:
-        return self._get_agreement(agreement_id).phase in (PHASE_FINALIZED,) + TERMINAL_PHASES
+        agreement = self._get_agreement(agreement_id)
+        if agreement.uses_milestones:
+            return self.get_milestone_summary(agreement_id)["all_complete"]
+        return agreement.phase in (PHASE_FINALIZED,) + TERMINAL_PHASES
 
     @gl.public.view
     def is_consumable(self, agreement_id: str) -> bool:
-        return self._get_agreement(agreement_id).phase not in TERMINAL_PHASES
+        agreement = self._get_agreement(agreement_id)
+        if agreement.uses_milestones:
+            return not self.get_milestone_summary(agreement_id)["all_complete"]
+        return agreement.phase not in TERMINAL_PHASES
 
     @gl.public.view
     def get_recovery_status(self, agreement_id: str) -> str:

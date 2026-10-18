@@ -1,5 +1,16 @@
 # Deployment
 
+## Reviewer-fix candidate (not yet deployed)
+
+The working tree now contains a new contract version addressing PARTIAL payout sufficiency, evaluation-time evidence
+bindings, warranty subject validation, warranty/milestone mutual exclusion, bilateral ambiguity acknowledgement, and
+milestone consumer views. It is pinned to the same GenVM runner. Before deployment, the existing address below remains
+the canonical live release; none of these candidate changes are claimed as network-verified. Local acceptance currently
+passes 94 Direct Mode tests, GenVM lint (3 checks), and schema validation (45 methods). Candidate source hash and the
+deployment transaction/evidence will be recorded here only after the transaction is independently read back and the
+required lifecycles execute successfully. The older deployment and its funds remain separate; deployment does not
+move or reconcile them.
+
 ## Corrected reviewer-fix release (2026-10-18)
 
 | Field | Value |
