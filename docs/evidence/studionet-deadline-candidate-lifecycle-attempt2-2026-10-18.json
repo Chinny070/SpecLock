@@ -1,0 +1,457 @@
+{
+  "network": "GenLayer Studio Network",
+  "chainId": 61999,
+  "contract": "0xD47ed31c0b58100101Ec1d7DE1c11bB15A252DBE",
+  "sourceSha256": "5F5204E9BF3941D688ABD0F34A31FCF2C788A29772A1A0237585008D8A54AC7F",
+  "limitation": "These lifecycle writes are same-day and do not establish expiry after the seven-day delivery window.",
+  "actors": {
+    "buyer": "0x562e98D9acc8CB9d4B43Fd4c9b496945062AC3f7",
+    "provider": "0x73156D1202E3692f8a0c4850e4989deac0836826"
+  },
+  "entries": [
+    {
+      "label": "buyer test signer topup",
+      "from": "my-studionet-wallet",
+      "to": "0x562e98D9acc8CB9d4B43Fd4c9b496945062AC3f7",
+      "amountGEN": "0.00002gen",
+      "hash": "0x68af576cceac088208d352798b8ce2c535435a4b16bc695ac22c65a7077940e3",
+      "output": "Result:\n{\n  transactionHash: '0x68af576cceac088208d352798b8ce2c535435a4b16bc695ac22c65a7077940e3',\n  from: '0xaffE15eEc45b68835cc9E5B4Ab85dD5deaE8e70b',\n  to: '0x562e98D9acc8CB9d4B43Fd4c9b496945062AC3f7',\n  amount: '0.00002 GEN',\n  blockNumber: '0',\n  gasUsed: '8000000'\n}"
+    },
+    {
+      "label": "provider test signer topup",
+      "from": "my-studionet-wallet",
+      "to": "0x73156D1202E3692f8a0c4850e4989deac0836826",
+      "amountGEN": "0.00001gen",
+      "hash": "0x9e64d97a66ea1e2699d6facf2b631682988f863e01e60d0fdaf7ae360259d5db",
+      "output": "Result:\n{\n  transactionHash: '0x9e64d97a66ea1e2699d6facf2b631682988f863e01e60d0fdaf7ae360259d5db',\n  from: '0xaffE15eEc45b68835cc9E5B4Ab85dD5deaE8e70b',\n  to: '0x73156D1202E3692f8a0c4850e4989deac0836826',\n  amount: '0.00001 GEN',\n  blockNumber: '0',\n  gasUsed: '8000000'\n}"
+    },
+    {
+      "label": "api-negative:create",
+      "signer": "0x562e98D9acc8CB9d4B43Fd4c9b496945062AC3f7",
+      "method": "create_agreement",
+      "args": [
+        "0x73156D1202E3692f8a0c4850e4989deac0836826",
+        "api_delivery",
+        "Deadline candidate api-negative verification",
+        [
+          {
+            "id": "c1",
+            "description": "The JSON response's slideshow title is exactly 'An intentionally incorrect title'.",
+            "priority": "required",
+            "evidence_method": "http:c1",
+            "expected_json": {
+              "slideshow": {
+                "title": "An intentionally incorrect title"
+              }
+            },
+            "target_url": "https://httpbin.org/json"
+          }
+        ],
+        0
+      ],
+      "valueWei": "0",
+      "hash": "0xb51afc9ccb3e4d4f28a1e676344c928287aa89cb65106d5404248bc71bf2ee7e",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": "2",
+      "votes": {
+        "0x0B50B270Eba5D9B780272C4Cf4720260177e761D": "idle",
+        "0x1242E9f5bf9b253327f130E8802b7b2F438A21Ef": "agree",
+        "0x8a876C3F3a4783Bd123982bcBF3c672dc0239004": "agree",
+        "0xa21bc502E3578E4b3039be8c59a257198f7c3f19": "idle",
+        "0xe7eEe8a1c1690b0322d795B80A76ab2Cd1a0eAFd": "agree"
+      }
+    },
+    {
+      "label": "api-negative:accept",
+      "signer": "0x73156D1202E3692f8a0c4850e4989deac0836826",
+      "method": "accept_agreement",
+      "args": [
+        "2"
+      ],
+      "valueWei": "0",
+      "hash": "0xdc41bfb2571828acbd5a679e528df94659aefb6aaa360171decb241527cc0039",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": null,
+      "votes": {
+        "0x17ac0CaefB18205c737e64ee582c9245A28ca1f9": "agree",
+        "0x2FcBC452425f2F1e102c5c04b4331fcB46ee1c00": "agree",
+        "0x40533175AfBbAee2c030F88259Afb5aEDbCF0E05": "agree",
+        "0x892C437da9b9CA0b6017B6f046F58E3526B46ec6": "agree",
+        "0xf29b6947ed298d139FC2655DB15D868C9AbB3091": "agree"
+      }
+    },
+    {
+      "label": "api-negative:fund",
+      "signer": "0x562e98D9acc8CB9d4B43Fd4c9b496945062AC3f7",
+      "method": "fund_agreement",
+      "args": [
+        "2",
+        10000000000000
+      ],
+      "valueWei": "10000000000000",
+      "hash": "0x8683530e26c96481cb3f3d9a45085c8e5a2ab56bfb2ac1fe6132284febbffc2a",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": true,
+      "votes": {
+        "0x1dEcE6A694520b1d3a2e24b9f28500858C756BDb": "agree",
+        "0x8Ce1805d6970d54748dE7160b5b395dCC5c71F44": "agree",
+        "0xad7d13f269CeAd4379E64a1A3a0803a827e70B43": "agree",
+        "0xb0925568bFbCF00aADBcA053E6D0E1628ff3d530": "agree",
+        "0xf1C7551292319EE334e2D8A24eAC108Bd4C63b21": "idle"
+      }
+    },
+    {
+      "label": "api-negative:freeze",
+      "signer": "0x562e98D9acc8CB9d4B43Fd4c9b496945062AC3f7",
+      "method": "freeze_agreement",
+      "args": [
+        "2",
+        false
+      ],
+      "valueWei": "0",
+      "hash": "0x13c1b2fdd2c99bfa0949f5d9ec750870411ef09a9b4d5af3998d461ae97fbdfe",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": null,
+      "votes": {
+        "0x5Bbbd7cdD63c0ba7f088038Cb049bDDAbE4F6fd1": "agree",
+        "0x7bf4Ea55363bbe73A4dd5b3900bf03c978A63b6e": "agree",
+        "0x9244De5F20cB75A0c51d79A9A3208D00a99aFc10": "agree",
+        "0xA712cB25a4002666FA9D09477251f238dD9e06b3": "agree",
+        "0xf1C7551292319EE334e2D8A24eAC108Bd4C63b21": "agree"
+      }
+    },
+    {
+      "label": "api-negative:evidence",
+      "signer": "0x73156D1202E3692f8a0c4850e4989deac0836826",
+      "method": "submit_evidence",
+      "args": [
+        "2",
+        "https://httpbin.org/json",
+        "bab3dfd2a6c992e4bf589eee05fc9650cc9d6988660b947a7a87b99420d108f9",
+        "{\"criterion_id\":\"c1\"}"
+      ],
+      "valueWei": "0",
+      "hash": "0x12167e69dd55efe86090eac562c79af327e0fc91c079224b93e562a5ec365aee",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": "2-ev2",
+      "votes": {
+        "0x5Bbbd7cdD63c0ba7f088038Cb049bDDAbE4F6fd1": "idle",
+        "0x892C437da9b9CA0b6017B6f046F58E3526B46ec6": "agree",
+        "0x8Ce1805d6970d54748dE7160b5b395dCC5c71F44": "idle",
+        "0xa21bc502E3578E4b3039be8c59a257198f7c3f19": "agree",
+        "0xf1C7551292319EE334e2D8A24eAC108Bd4C63b21": "agree"
+      }
+    },
+    {
+      "label": "api-negative:evaluate",
+      "signer": "0x73156D1202E3692f8a0c4850e4989deac0836826",
+      "method": "request_evaluation",
+      "args": [
+        "2"
+      ],
+      "valueWei": "0",
+      "hash": "0x834be382cfb6285a3341f18f21e3fb9dc8a585139f3088a7f3a75a16aa531773",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": "2-eval2",
+      "votes": {
+        "0x0B50B270Eba5D9B780272C4Cf4720260177e761D": "agree",
+        "0x5Bbbd7cdD63c0ba7f088038Cb049bDDAbE4F6fd1": "idle",
+        "0x7bf4Ea55363bbe73A4dd5b3900bf03c978A63b6e": "idle",
+        "0xA712cB25a4002666FA9D09477251f238dD9e06b3": "agree",
+        "0xf29b6947ed298d139FC2655DB15D868C9AbB3091": "agree"
+      }
+    },
+    {
+      "label": "api-negative:finalize-buyer",
+      "signer": "0x562e98D9acc8CB9d4B43Fd4c9b496945062AC3f7",
+      "method": "finalize_verdict",
+      "args": [
+        "2"
+      ],
+      "valueWei": "0",
+      "hash": "0x84b93b0afbc6102d1b2f21c16f7c07ba29edc611e3d47027593387f75aafb6f3",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": false,
+      "votes": {
+        "0x2FcBC452425f2F1e102c5c04b4331fcB46ee1c00": "agree",
+        "0x8a876C3F3a4783Bd123982bcBF3c672dc0239004": "agree",
+        "0xad7d13f269CeAd4379E64a1A3a0803a827e70B43": "agree",
+        "0xe7eEe8a1c1690b0322d795B80A76ab2Cd1a0eAFd": "idle",
+        "0xf1C7551292319EE334e2D8A24eAC108Bd4C63b21": "idle"
+      }
+    },
+    {
+      "label": "api-negative:finalize-provider",
+      "signer": "0x73156D1202E3692f8a0c4850e4989deac0836826",
+      "method": "finalize_verdict",
+      "args": [
+        "2"
+      ],
+      "valueWei": "0",
+      "hash": "0xa32ff3128f57597991864452d3c17154bea96fc71f4b15106f76866490c339a3",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": true,
+      "votes": {
+        "0x1242E9f5bf9b253327f130E8802b7b2F438A21Ef": "idle",
+        "0x17ac0CaefB18205c737e64ee582c9245A28ca1f9": "agree",
+        "0x40533175AfBbAee2c030F88259Afb5aEDbCF0E05": "agree",
+        "0x5Bbbd7cdD63c0ba7f088038Cb049bDDAbE4F6fd1": "idle",
+        "0xA712cB25a4002666FA9D09477251f238dD9e06b3": "agree"
+      }
+    },
+    {
+      "label": "api-negative:settle",
+      "signer": "0x562e98D9acc8CB9d4B43Fd4c9b496945062AC3f7",
+      "method": "settle",
+      "args": [
+        "2"
+      ],
+      "valueWei": "0",
+      "hash": "0x7fc2d02b10b88491f57b3976a27c4eeee26d81224d02dfe3fe7eb55355f9f2a6",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": "2-st2",
+      "votes": {
+        "0x1dEcE6A694520b1d3a2e24b9f28500858C756BDb": "agree",
+        "0x6a4179A851B3747A458baD2f089AB2EeFE0eBbAb": "agree",
+        "0x7bf4Ea55363bbe73A4dd5b3900bf03c978A63b6e": "idle",
+        "0x892C437da9b9CA0b6017B6f046F58E3526B46ec6": "idle",
+        "0x8a876C3F3a4783Bd123982bcBF3c672dc0239004": "agree"
+      }
+    },
+    {
+      "label": "api-negative:buyer-withdraw",
+      "signer": "0x562e98D9acc8CB9d4B43Fd4c9b496945062AC3f7",
+      "method": "withdraw",
+      "args": [],
+      "valueWei": "0",
+      "hash": "0x15c8b6ff44ffd7d9ce8a58a468574c4d68302e9f532b979b326836f6fc15c088",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": 10000000000000,
+      "votes": {
+        "0x1242E9f5bf9b253327f130E8802b7b2F438A21Ef": "idle",
+        "0x1dEcE6A694520b1d3a2e24b9f28500858C756BDb": "agree",
+        "0x7bf4Ea55363bbe73A4dd5b3900bf03c978A63b6e": "idle",
+        "0x8Ce1805d6970d54748dE7160b5b395dCC5c71F44": "agree",
+        "0xa21bc502E3578E4b3039be8c59a257198f7c3f19": "agree"
+      }
+    }
+  ],
+  "reads": [
+    {
+      "label": "api-negative:pre-freeze",
+      "method": "get_agreement",
+      "args": [
+        "2"
+      ],
+      "value": {
+        "agreement_id": "2",
+        "ambiguity_report": "[]",
+        "appeal_deadline_at": 0,
+        "buyer": "0x562e98D9acc8CB9d4B43Fd4c9b496945062AC3f7",
+        "buyer_acknowledged_ambiguity": false,
+        "buyer_consents_expire": false,
+        "buyer_economic_terms_hash": "",
+        "buyer_ready_to_finalize": false,
+        "buyer_wants_procedural_review": false,
+        "delivery_deadline_at": 0,
+        "frozen_at": 0,
+        "funded_amount": 10000000000000,
+        "latest_appeal_id": "",
+        "latest_evaluation_id": "",
+        "latest_warranty_claim_id": "",
+        "milestones_defined": false,
+        "phase": "FUNDED",
+        "policy_id": "speclock-core",
+        "policy_version": 2,
+        "procedural_review_used": false,
+        "profile": "api_delivery",
+        "provider": "0x73156D1202E3692f8a0c4850e4989deac0836826",
+        "provider_acknowledged_ambiguity": false,
+        "provider_consents_expire": false,
+        "provider_economic_terms_hash": "",
+        "provider_ready_to_finalize": false,
+        "provider_wants_procedural_review": false,
+        "refunded_amount": 0,
+        "released_amount": 0,
+        "resubmission_deadline_at": 0,
+        "resubmission_requested_at": 0,
+        "retained_amount": 0,
+        "settlement_id": "",
+        "spec_fingerprint": "25fe8236df887530cd0e91096b52edf76cb7f5f869c9419169de5326a90731a6",
+        "uses_milestones": false,
+        "warranty_bps": 0,
+        "warranty_deadline_at": 0,
+        "warranty_held_amount": 0,
+        "warranty_status": "NONE"
+      }
+    },
+    {
+      "label": "api-negative:frozen-state",
+      "method": "get_agreement",
+      "args": [
+        "2"
+      ],
+      "value": {
+        "agreement_id": "2",
+        "ambiguity_report": "[]",
+        "appeal_deadline_at": 0,
+        "buyer": "0x562e98D9acc8CB9d4B43Fd4c9b496945062AC3f7",
+        "buyer_acknowledged_ambiguity": false,
+        "buyer_consents_expire": false,
+        "buyer_economic_terms_hash": "",
+        "buyer_ready_to_finalize": false,
+        "buyer_wants_procedural_review": false,
+        "delivery_deadline_at": 1792946891,
+        "frozen_at": 1792342091,
+        "funded_amount": 10000000000000,
+        "latest_appeal_id": "",
+        "latest_evaluation_id": "",
+        "latest_warranty_claim_id": "",
+        "milestones_defined": false,
+        "phase": "FROZEN",
+        "policy_id": "speclock-core",
+        "policy_version": 2,
+        "procedural_review_used": false,
+        "profile": "api_delivery",
+        "provider": "0x73156D1202E3692f8a0c4850e4989deac0836826",
+        "provider_acknowledged_ambiguity": false,
+        "provider_consents_expire": false,
+        "provider_economic_terms_hash": "",
+        "provider_ready_to_finalize": false,
+        "provider_wants_procedural_review": false,
+        "refunded_amount": 0,
+        "released_amount": 0,
+        "resubmission_deadline_at": 0,
+        "resubmission_requested_at": 0,
+        "retained_amount": 0,
+        "settlement_id": "",
+        "spec_fingerprint": "25fe8236df887530cd0e91096b52edf76cb7f5f869c9419169de5326a90731a6",
+        "uses_milestones": false,
+        "warranty_bps": 0,
+        "warranty_deadline_at": 0,
+        "warranty_held_amount": 0,
+        "warranty_status": "NONE"
+      }
+    },
+    {
+      "label": "api-negative:evaluation",
+      "method": "get_evaluation",
+      "args": [
+        "2-eval2"
+      ],
+      "value": {
+        "agreement_id": "2",
+        "appeal_deadline_at": 1792514968,
+        "created_at": 1792342168,
+        "evaluation_id": "2-eval2",
+        "evidence_bindings": {
+          "c1": [
+            "2-ev2"
+          ]
+        },
+        "evidence_snapshot_commitment": "62291c348026dffa4ff0b39f7ed0e332f4bc08a30f229342a2e05524b14ff576",
+        "failure_attribution": "DELIVERY",
+        "findings": [
+          {
+            "attribution": "DELIVERY",
+            "criterion_id": "c1",
+            "finding": "FAIL",
+            "rationale": "HTTP 200 but response failed functional check",
+            "sufficiency": "SUFFICIENT"
+          }
+        ],
+        "overall_finding": "FAIL",
+        "profile": "api_delivery",
+        "round": 1,
+        "status": "PROVISIONAL"
+      }
+    },
+    {
+      "label": "api-negative:settlement",
+      "method": "get_settlement",
+      "args": [
+        "2"
+      ],
+      "value": {
+        "refunded_to_buyer": 10000000000000,
+        "released_to_provider": 0,
+        "retained": 0,
+        "settlement_id": "2-st2",
+        "terminal_phase": "SETTLED"
+      }
+    },
+    {
+      "label": "api-negative:buyer-withdraw:claimable-before",
+      "method": "get_claimable",
+      "args": [
+        "0x562e98D9acc8CB9d4B43Fd4c9b496945062AC3f7"
+      ],
+      "value": 10000000000000
+    },
+    {
+      "label": "api-negative:provider-withdraw:claimable-before",
+      "method": "get_claimable",
+      "args": [
+        "0x73156D1202E3692f8a0c4850e4989deac0836826"
+      ],
+      "value": 0
+    }
+  ],
+  "balanceChanges": [
+    {
+      "label": "api-negative:buyer-withdraw",
+      "beforeWei": "10000000000000",
+      "afterWei": "20000000000000",
+      "deltaWei": "10000000000000",
+      "claimableWei": "10000000000000",
+      "childTransfers": [
+        {
+          "hash": "0xe9ee58f1fd21c0e4965c4be9add61030b92a2078f4557f01a76ba60e001bf2f4",
+          "status": "FINALIZED",
+          "result_name": "NO_MAJORITY",
+          "execution_result": null,
+          "value_credited": true,
+          "value": "10000000000000"
+        }
+      ]
+    }
+  ],
+  "sourceFetches": {
+    "api-negative": {
+      "digest": "bab3dfd2a6c992e4bf589eee05fc9650cc9d6988660b947a7a87b99420d108f9",
+      "bytes": 429,
+      "status": 200
+    }
+  },
+  "agreements": {
+    "api-negative": "2"
+  },
+  "expected": {
+    "api-negative": {
+      "expected": "FAIL",
+      "actual": "FAIL",
+      "sufficiency": "SUFFICIENT",
+      "evaluationId": "2-eval2"
+    }
+  }
+}

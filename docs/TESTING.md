@@ -1,6 +1,6 @@
 # Testing and verification
 
-## Deadline-security candidate (2026-10-18)
+## Deadline-security release (2026-10-18)
 
 The candidate changes `contracts/speclock.py` so expiry does not treat a missing evaluation request as proof of failed delivery. Timely evidence is evaluated through the existing validator-backed API/agent process even when evaluation is triggered after the delivery deadline. No-evidence expiry still refunds. Prior evaluated verdicts return to their normal finality and settlement path if a requested resubmission receives no new evidence. Milestone expiry is criterion-scoped, and the resubmission deadline remains anchored to the resubmission request.
 
@@ -33,13 +33,13 @@ Both passed. `check`: **3 checks passed**. `validate`: passed for `SpecLock`, **
 
 ## Gate D — clean GitHub clone
 
-**Pending.** The source changes have not yet been pushed and tested from a fresh clone. This gate must pass before this candidate is called reproducible or deployed.
+**Passed** at commit `b1412efa0e0279aaaa967aec62205722a09b916a`: fresh clone reported 103 passed, zero failures, zero skipped; both GenVM commands passed. Normalized source SHA-256: `5F5204E9BF3941D688ABD0F34A31FCF2C788A29772A1A0237585008D8A54AC7F`.
 
 ## Gate E — Studionet
 
-The latest existing deployment is `0xDFb69c1890F72c7b791A938ed36C5103582E6F19` (chain `61999`, deployment transaction `0x47a258b79297644bce2d54ba8eea678177b27856181577b685d9d3adfbfc35c`). Its source SHA-256 is `CEC00C69E57E6AE1B70C77BE49CFFEEB912F2D55D15E42AF75A2B6687ABB6F5C`; it predates this deadline correction. **It is not evidence that the deadline fix is deployed.**
+The corrected release is deployed at `0xD47ed31c0b58100101Ec1d7DE1c11bB15A252DBE` (chain `61999`, transaction `0x6505c1e2602432706a9e40d258ae53b1d514e4c7`). Receipt is FINALIZED/MAJORITY_AGREE with leader SUCCESS; retrieved source hash matches the tested source. The schema is callable with 47 methods. Positive and negative live API lifecycles, including evaluation, settlement, and withdrawal, are recorded in `docs/evidence/studionet-deadline-candidate-lifecycle-2026-10-18.json` and `docs/evidence/studionet-deadline-candidate-lifecycle-attempt2-2026-10-18.json`.
 
-Redeployment is gated on the clean-clone suite and both GenVM checks. The fixed delivery window is seven days, and the resubmission window is also seven days from its own request time. Direct Mode can verify boundary and expiry behavior deterministically, but it cannot prove elapsed real network time. A live deadline demonstration must wait for the on-chain deadline; no shortened production deadline or mocked network evidence is accepted as a substitute. Deployment and live transaction hashes, outcomes, and balance changes will be recorded in `docs/DEPLOYMENT.md` only after they actually occur.
+The fixed delivery window is seven days, and the resubmission window is seven days from its own request time. Direct Mode proves boundary and expiry behavior deterministically, but not elapsed real network time. The required live post-deadline run must wait for the on-chain deadline; no shortened production deadline or mocked timestamp is accepted. Deployment and ordinary PASS/FAIL lifecycle success do not satisfy live deadline acceptance.
 
 ## Historical verification
 

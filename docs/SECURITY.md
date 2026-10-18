@@ -4,7 +4,7 @@
 
 `MAX_CRITERIA=32`, `MAX_SPEC_CHARS=20000`, `MAX_CRITERION_CHARS=2000`, `MAX_EVIDENCE_URL_CHARS=2000`, `MAX_EVIDENCE_METADATA_CHARS=4000`, `MAX_EVIDENCE_PER_AGREEMENT=64`, `MAX_APPEAL_ROUNDS=2`, `MAX_APPEAL_GROUNDS_CHARS=2000`, `MAX_RESUBMISSIONS=3` (per-agreement cap, configurable lower at creation), `MAX_RATIONALE_CHARS=4000`, `MAX_FETCH_BYTES=200000`, `PAGE_SIZE_MAX=50`.
 
-The candidate source uses `datetime.now(timezone.utc)` as a transaction-pinned timestamp for deadlines; no caller can supply the clock. GenLayer's official runtime documentation says validators observe the same transaction timestamp. The candidate passes Direct Mode deadline-boundary tests; its clean-clone and Studionet verification are pending. The existing deployment at `0xDFb69c1890F72c7b791A938ed36C5103582E6F19` predates the post-deadline evidence-routing fix and is not proof of that behavior. See `docs/GENLAYER_CAPABILITIES.md` and `docs/TESTING.md`.
+The release uses `datetime.now(timezone.utc)` as a transaction-pinned timestamp; callers cannot supply the clock. GenLayer's runtime documentation says validators observe the same transaction timestamp. The source passes Direct Mode tests and clean-clone verification and is deployed at `0xD47ed31c0b58100101Ec1d7DE1c11bB15A252DBE`, source-matched by SHA-256. A live positive API lifecycle is verified, but the seven-day post-deadline evidence-routing behavior still requires a natural expiry transaction. See `docs/GENLAYER_CAPABILITIES.md` and `docs/TESTING.md`.
 
 ## URL / SSRF handling
 

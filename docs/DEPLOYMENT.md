@@ -1,14 +1,23 @@
 # Deployment
 
-## Deadline-security fix candidate (2026-10-18; not deployed yet)
+## Deadline-security fix release (2026-10-18)
 
-Candidate contract source SHA-256: `5F5204E9BF3941D688ABD0F34A31FCF2C788A29772A1A0237585008D8A54AC7F`. The candidate retains all prior lifecycle, evaluation, evidence-integrity, appeal, warranty, milestone, escrow, withdrawal, and replay behavior while changing only deadline/evidence routing and tracking the evidence-index checkpoint at a resubmission request.
+Deployed contract: `0xD47ed31c0b58100101Ec1d7DE1c11bB15A252DBE` ([Explorer](https://genlayer-explorer.vercel.app/address/0xD47ed31c0b58100101Ec1d7DE1c11bB15A252DBE)); deployment transaction `0x6505c1e2602432706a9e40d258ae53b1d514e4c7a54384b1eca91a4a695490c7`; chain ID `61999` (Studio Network). Receipt status `FINALIZED`, `result_name: MAJORITY_AGREE`, leader `execution_result: SUCCESS`; validators revealed with 3 AGREE and 2 IDLE. The deployed callable schema returned 47 methods. Retrieved contract source normalized to LF has SHA-256 `5F5204E9BF3941D688ABD0F34A31FCF2C788A29772A1A0237585008D8A54AC7F`, matching the tested source. The release retains all prior lifecycle, evaluation, evidence-integrity, appeal, warranty, milestone, escrow, withdrawal, and replay behavior while correcting deadline/evidence routing and tracking the evidence-index checkpoint at a resubmission request.
 
 Local verification passed: **103/103 Direct Mode tests**, zero skipped; `genvm-lint check` (3 checks) and `genvm-lint validate` (47 methods, 20 views, 27 writes). The test set preserves the original 97 cases and adds six regressions; the old test that expected an automatic refund despite timely evidence now asserts validator-backed evaluation instead. `docs/TESTING.md` records commands and coverage.
 
-The existing deployment below predates this source. Clean GitHub-clone verification, redeployment, and live lifecycle evidence for a naturally elapsed delivery deadline remain pending. The production window is seven days; no test-only shortening or mocked network run will be presented as live proof.
+Clean-clone verification, redeployment, and live standard API positive and negative lifecycles have passed. The seven-day post-deadline behavior itself remains pending natural expiry; no test-only shortening or mocked network timestamp is presented as live proof.
 
-## Current release — deployed and representative lifecycle checks completed (2026-10-18)
+| Live case (agreement) | Evaluation | Finality and settlement | Beneficiary withdrawal |
+|---|---|---|---|
+| API positive (`1`) | `0xda0f184a7e6e1d5505cfbf6f4ef6878e3f3e0dc407e84cff3f7644a62f552305`, FINALIZED / SUCCESS; `PASS`, `SUFFICIENT` | `0x072512e3cac4da840d75ccddbc9e3627fc99f50e2bd5819f5e2c0e0ae2219354`, FINALIZED / SUCCESS; 10,000,000,000,000 wei released to provider | `0x59c4b3e87574d798f45a451098088a536eab5c9e28f194b1a576f1a4f68d6244`; provider +10,000,000,000,000 wei; triggered transfer `0x82e7d8428b9e49c619198659d4a47dbcb78bdcc97e75b71b08541c931348a88e`, FINALIZED, `value_credited:true` |
+| API negative (`2`) | `0x834be382cfb6285a3341f18f21e3fb9dc8a585139f3088a7f3a75a16aa531773`, FINALIZED / SUCCESS; `FAIL`, `SUFFICIENT` | `0x7fc2d02b10b88491f57b3976a27c4eeee26d81224d02dfe3fe7eb55355f9f2a6`, FINALIZED / SUCCESS; 10,000,000,000,000 wei refunded to buyer | `0x15c8b6ff44ffd7d9ce8a58a468574c4d68302e9f532b979b326836f6fc15c088`; buyer +10,000,000,000,000 wei; triggered transfer `0xe9ee58f1fd21c0e4965c4be9add61030b92a2078f4557f01a76ba60e001bf2f4`, FINALIZED, `value_credited:true` |
+
+Each funded agreement deposited 10,000,000,000,000 wei (0.00001 GEN). Evaluation used a real HTTPS fetch from `https://httpbin.org/json`, with the expected title correct for agreement 1 and intentionally incorrect for agreement 2; both committed digests and fetched content are in the JSON evidence files. Both settlement accounting equations conserve the full deposit. Full write/read receipts and signer addresses are recorded in `docs/evidence/studionet-deadline-candidate-lifecycle-2026-10-18.json` and `docs/evidence/studionet-deadline-candidate-lifecycle-attempt2-2026-10-18.json`.
+
+These transactions verify normal PASS/FAIL handling and settlement, not the post-deadline transition. The frozen agreements store a seven-day delivery deadline; direct network verification of permissionless evaluation after expiry must wait for it to elapse naturally.
+
+## Previous release — deployed and representative lifecycle checks completed (superseded 2026-10-18)
 
 | Field | Value |
 |---|---|

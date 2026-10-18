@@ -4,7 +4,7 @@
 
 `DRAFT → ACCEPTED → FUNDED → FROZEN → SUBMITTED → EVALUATING(implicit) → PROVISIONAL_VERDICT → (APPEALED → RE_EVALUATING → PROVISIONAL_VERDICT)* → FINALIZED → SETTLED | RECOVERY_PENDING → REFUNDED`
 
-Side branches: `CANCELLED` (from `DRAFT`/`ACCEPTED`, single-party), `EXPIRED` (no-evidence refund after the applicable transaction-time deadline, or mutually-consented early wind-down), and `RESUBMISSION_REQUESTED` (from `PROVISIONAL_VERDICT`, bounded by `max_resubmissions`). Timely evidence still pending evaluation routes to evaluation after the deadline; an existing verdict returns to its ordinary appeal/finality/settlement path. GenLayer documents `datetime.now(timezone.utc)` as transaction-pinned and validator-consistent. The current candidate's deadline correction is not yet deployed; see `docs/TESTING.md`.
+Side branches: `CANCELLED` (from `DRAFT`/`ACCEPTED`, single-party), `EXPIRED` (no-evidence refund after the applicable transaction-time deadline, or mutually-consented early wind-down), and `RESUBMISSION_REQUESTED` (from `PROVISIONAL_VERDICT`, bounded by `max_resubmissions`). Timely evidence still pending evaluation routes to evaluation after the deadline; an existing verdict returns to its ordinary appeal/finality/settlement path. GenLayer documents `datetime.now(timezone.utc)` as transaction-pinned and validator-consistent. This correction is deployed and source-matched; live seven-day expiry remains unverified. See `docs/TESTING.md`.
 
 Note: there is no separate stored `EVALUATING` phase — `request_evaluation` runs the (nondeterministic) evaluation synchronously within the same call that transitions `SUBMITTED`/`RE_EVALUATING` → `PROVISIONAL_VERDICT`; this is a simplification versus the brief's illustrative phase list, made because GenVM's nondeterministic execution model does not require (or cleanly support, in Direct Mode) a separate pending-evaluation phase with asynchronous completion.
 
@@ -27,7 +27,7 @@ Note: there is no separate stored `EVALUATING` phase — `request_evaluation` ru
 | FINALIZED | `settle` | either party | `settlement_id==""` | deterministic payout split from `overall_finding`; `UNVERIFIABLE` retains funds instead of awarding either party | SETTLED or RECOVERY_PENDING |
 | RECOVERY_PENDING | `recover_inconclusive` | either party | — | full refund to buyer | REFUNDED |
 
-At exact delivery/resubmission boundaries, evidence is admissible (`now <= deadline`); one second later it is rejected. Expiry is strictly after the deadline (`now > deadline`). For a milestone, `expire_milestone` checks only receipts tagged to that milestone's criterion IDs: no relevant evidence refunds only its allocation, while relevant evidence triggers that milestone's normal evaluation. Direct Mode covers these boundary and routing cases. Live verification of the corrected candidate remains pending.
+At exact delivery/resubmission boundaries, evidence is admissible (`now <= deadline`); one second later it is rejected. Expiry is strictly after the deadline (`now > deadline`). For a milestone, `expire_milestone` checks only receipts tagged to that milestone's criterion IDs: no relevant evidence refunds only its allocation, while relevant evidence triggers that milestone's normal evaluation. Direct Mode covers these boundary and routing cases. The source is deployed; an on-chain transaction after a natural deadline remains pending.
 
 `TERMINAL_PHASES = {SETTLED, CANCELLED, EXPIRED, REFUNDED}`; `is_consumable()` returns False for all of these. `is_final()` additionally includes `FINALIZED`.
 

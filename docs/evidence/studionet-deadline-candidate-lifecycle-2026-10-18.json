@@ -1,0 +1,457 @@
+{
+  "network": "GenLayer Studio Network",
+  "chainId": 61999,
+  "contract": "0xD47ed31c0b58100101Ec1d7DE1c11bB15A252DBE",
+  "sourceSha256": "5F5204E9BF3941D688ABD0F34A31FCF2C788A29772A1A0237585008D8A54AC7F",
+  "limitation": "These lifecycle writes are same-day and do not establish expiry after the seven-day delivery window.",
+  "actors": {
+    "buyer": "0xd24BF30b522cCF610b1E65C614901050241c040D",
+    "provider": "0xB61b4E91cC6C138526EF97B656980f5D7d295a7F"
+  },
+  "entries": [
+    {
+      "label": "buyer test signer topup",
+      "from": "my-studionet-wallet",
+      "to": "0xd24BF30b522cCF610b1E65C614901050241c040D",
+      "amountGEN": "0.0001gen",
+      "hash": "0xb692360e10bf305c507ad1043884ae6abaad74d53d533f0bc1af13ed07dbe89d",
+      "output": "Result:\n{\n  transactionHash: '0xb692360e10bf305c507ad1043884ae6abaad74d53d533f0bc1af13ed07dbe89d',\n  from: '0xaffE15eEc45b68835cc9E5B4Ab85dD5deaE8e70b',\n  to: '0xd24BF30b522cCF610b1E65C614901050241c040D',\n  amount: '0.0001 GEN',\n  blockNumber: '0',\n  gasUsed: '8000000'\n}"
+    },
+    {
+      "label": "provider test signer topup",
+      "from": "my-studionet-wallet",
+      "to": "0xB61b4E91cC6C138526EF97B656980f5D7d295a7F",
+      "amountGEN": "0.00001gen",
+      "hash": "0x7e5e57b34c6a6da4091935b2299629897da00d405373f78cbd76ff1b04f5a026",
+      "output": "Result:\n{\n  transactionHash: '0x7e5e57b34c6a6da4091935b2299629897da00d405373f78cbd76ff1b04f5a026',\n  from: '0xaffE15eEc45b68835cc9E5B4Ab85dD5deaE8e70b',\n  to: '0xB61b4E91cC6C138526EF97B656980f5D7d295a7F',\n  amount: '0.00001 GEN',\n  blockNumber: '0',\n  gasUsed: '8000000'\n}"
+    },
+    {
+      "label": "api-positive:create",
+      "signer": "0xd24BF30b522cCF610b1E65C614901050241c040D",
+      "method": "create_agreement",
+      "args": [
+        "0xB61b4E91cC6C138526EF97B656980f5D7d295a7F",
+        "api_delivery",
+        "Deadline candidate api-positive verification",
+        [
+          {
+            "id": "c1",
+            "description": "The JSON response's slideshow title is exactly 'Sample Slide Show'.",
+            "priority": "required",
+            "evidence_method": "http:c1",
+            "expected_json": {
+              "slideshow": {
+                "title": "Sample Slide Show"
+              }
+            },
+            "target_url": "https://httpbin.org/json"
+          }
+        ],
+        0
+      ],
+      "valueWei": "0",
+      "hash": "0x4fe25d225ec8b9b3154492865e6d09bdc98232d4dea3bfb3d7bf42e5443f7822",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": "1",
+      "votes": {
+        "0x1242E9f5bf9b253327f130E8802b7b2F438A21Ef": "agree",
+        "0x17ac0CaefB18205c737e64ee582c9245A28ca1f9": "agree",
+        "0x40533175AfBbAee2c030F88259Afb5aEDbCF0E05": "idle",
+        "0x5Bbbd7cdD63c0ba7f088038Cb049bDDAbE4F6fd1": "agree",
+        "0xf29b6947ed298d139FC2655DB15D868C9AbB3091": "agree"
+      }
+    },
+    {
+      "label": "api-positive:accept",
+      "signer": "0xB61b4E91cC6C138526EF97B656980f5D7d295a7F",
+      "method": "accept_agreement",
+      "args": [
+        "1"
+      ],
+      "valueWei": "0",
+      "hash": "0x5031e85ef719839304b80919bcdb93419de7c8bac169efdce0c6227e526ac888",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": null,
+      "votes": {
+        "0x1dEcE6A694520b1d3a2e24b9f28500858C756BDb": "agree",
+        "0x40533175AfBbAee2c030F88259Afb5aEDbCF0E05": "agree",
+        "0x5Bbbd7cdD63c0ba7f088038Cb049bDDAbE4F6fd1": "agree",
+        "0x8a876C3F3a4783Bd123982bcBF3c672dc0239004": "idle",
+        "0xA712cB25a4002666FA9D09477251f238dD9e06b3": "idle"
+      }
+    },
+    {
+      "label": "api-positive:fund",
+      "signer": "0xd24BF30b522cCF610b1E65C614901050241c040D",
+      "method": "fund_agreement",
+      "args": [
+        "1",
+        10000000000000
+      ],
+      "valueWei": "10000000000000",
+      "hash": "0x2e1ca05a88929a2431e2cdec2c069ff5bc709a2448d8169a50b68b90490f68f4",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": true,
+      "votes": {
+        "0x1242E9f5bf9b253327f130E8802b7b2F438A21Ef": "agree",
+        "0x17ac0CaefB18205c737e64ee582c9245A28ca1f9": "agree",
+        "0x2FcBC452425f2F1e102c5c04b4331fcB46ee1c00": "agree",
+        "0x8Ce1805d6970d54748dE7160b5b395dCC5c71F44": "idle",
+        "0xa21bc502E3578E4b3039be8c59a257198f7c3f19": "agree"
+      }
+    },
+    {
+      "label": "api-positive:freeze",
+      "signer": "0xd24BF30b522cCF610b1E65C614901050241c040D",
+      "method": "freeze_agreement",
+      "args": [
+        "1",
+        false
+      ],
+      "valueWei": "0",
+      "hash": "0x66a07088bdffe6d3a277511b94600552553aaa530ee5342f56ea49de201ce1e3",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": null,
+      "votes": {
+        "0x0B50B270Eba5D9B780272C4Cf4720260177e761D": "agree",
+        "0x17ac0CaefB18205c737e64ee582c9245A28ca1f9": "idle",
+        "0x8a876C3F3a4783Bd123982bcBF3c672dc0239004": "idle",
+        "0xb0925568bFbCF00aADBcA053E6D0E1628ff3d530": "agree",
+        "0xf1C7551292319EE334e2D8A24eAC108Bd4C63b21": "agree"
+      }
+    },
+    {
+      "label": "api-positive:evidence",
+      "signer": "0xB61b4E91cC6C138526EF97B656980f5D7d295a7F",
+      "method": "submit_evidence",
+      "args": [
+        "1",
+        "https://httpbin.org/json",
+        "bab3dfd2a6c992e4bf589eee05fc9650cc9d6988660b947a7a87b99420d108f9",
+        "{\"criterion_id\":\"c1\"}"
+      ],
+      "valueWei": "0",
+      "hash": "0xebfd36a15d44d3ce4421deeb2607e57469634558536fab3f3caeea8e07bab477",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": "1-ev1",
+      "votes": {
+        "0x7bf4Ea55363bbe73A4dd5b3900bf03c978A63b6e": "agree",
+        "0x8Ce1805d6970d54748dE7160b5b395dCC5c71F44": "idle",
+        "0x9244De5F20cB75A0c51d79A9A3208D00a99aFc10": "idle",
+        "0xa21bc502E3578E4b3039be8c59a257198f7c3f19": "agree",
+        "0xf29b6947ed298d139FC2655DB15D868C9AbB3091": "agree"
+      }
+    },
+    {
+      "label": "api-positive:evaluate",
+      "signer": "0xB61b4E91cC6C138526EF97B656980f5D7d295a7F",
+      "method": "request_evaluation",
+      "args": [
+        "1"
+      ],
+      "valueWei": "0",
+      "hash": "0xda0f184a7e6e1d5505cfbf6f4ef6878e3f3e0dc407e84cff3f7644a62f552305",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": "1-eval1",
+      "votes": {
+        "0x2FcBC452425f2F1e102c5c04b4331fcB46ee1c00": "idle",
+        "0x6a4179A851B3747A458baD2f089AB2EeFE0eBbAb": "agree",
+        "0x8a876C3F3a4783Bd123982bcBF3c672dc0239004": "idle",
+        "0xf1C7551292319EE334e2D8A24eAC108Bd4C63b21": "agree",
+        "0xf29b6947ed298d139FC2655DB15D868C9AbB3091": "agree"
+      }
+    },
+    {
+      "label": "api-positive:finalize-buyer",
+      "signer": "0xd24BF30b522cCF610b1E65C614901050241c040D",
+      "method": "finalize_verdict",
+      "args": [
+        "1"
+      ],
+      "valueWei": "0",
+      "hash": "0xcf6f68ebedc7ddc6384d70adc7e88f3738bbecce8763155580fc08153f2a11c1",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": false,
+      "votes": {
+        "0x40533175AfBbAee2c030F88259Afb5aEDbCF0E05": "agree",
+        "0x5Bbbd7cdD63c0ba7f088038Cb049bDDAbE4F6fd1": "agree",
+        "0xA712cB25a4002666FA9D09477251f238dD9e06b3": "agree",
+        "0xa21bc502E3578E4b3039be8c59a257198f7c3f19": "agree",
+        "0xe7eEe8a1c1690b0322d795B80A76ab2Cd1a0eAFd": "idle"
+      }
+    },
+    {
+      "label": "api-positive:finalize-provider",
+      "signer": "0xB61b4E91cC6C138526EF97B656980f5D7d295a7F",
+      "method": "finalize_verdict",
+      "args": [
+        "1"
+      ],
+      "valueWei": "0",
+      "hash": "0x989143c7201a6276e24df24ddb2a8b069a7eb7dcd3493f8814ab67b7c2259666",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": true,
+      "votes": {
+        "0x1242E9f5bf9b253327f130E8802b7b2F438A21Ef": "agree",
+        "0x17ac0CaefB18205c737e64ee582c9245A28ca1f9": "idle",
+        "0x892C437da9b9CA0b6017B6f046F58E3526B46ec6": "agree",
+        "0xb0925568bFbCF00aADBcA053E6D0E1628ff3d530": "idle",
+        "0xe7eEe8a1c1690b0322d795B80A76ab2Cd1a0eAFd": "agree"
+      }
+    },
+    {
+      "label": "api-positive:settle",
+      "signer": "0xd24BF30b522cCF610b1E65C614901050241c040D",
+      "method": "settle",
+      "args": [
+        "1"
+      ],
+      "valueWei": "0",
+      "hash": "0x072512e3cac4da840d75ccddbc9e3627fc99f50e2bd5819f5e2c0e0ae2219354",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": "1-st1",
+      "votes": {
+        "0x5Bbbd7cdD63c0ba7f088038Cb049bDDAbE4F6fd1": "idle",
+        "0xA712cB25a4002666FA9D09477251f238dD9e06b3": "agree",
+        "0xe7eEe8a1c1690b0322d795B80A76ab2Cd1a0eAFd": "idle",
+        "0xf1C7551292319EE334e2D8A24eAC108Bd4C63b21": "agree",
+        "0xf29b6947ed298d139FC2655DB15D868C9AbB3091": "agree"
+      }
+    },
+    {
+      "label": "api-positive:provider-withdraw",
+      "signer": "0xB61b4E91cC6C138526EF97B656980f5D7d295a7F",
+      "method": "withdraw",
+      "args": [],
+      "valueWei": "0",
+      "hash": "0x59c4b3e87574d798f45a451098088a536eab5c9e28f194b1a576f1a4f68d6244",
+      "status": "FINALIZED",
+      "result_name": "MAJORITY_AGREE",
+      "execution_result": "SUCCESS",
+      "returnValue": 10000000000000,
+      "votes": {
+        "0x1dEcE6A694520b1d3a2e24b9f28500858C756BDb": "agree",
+        "0x40533175AfBbAee2c030F88259Afb5aEDbCF0E05": "agree",
+        "0x6a4179A851B3747A458baD2f089AB2EeFE0eBbAb": "agree",
+        "0x892C437da9b9CA0b6017B6f046F58E3526B46ec6": "agree",
+        "0xe7eEe8a1c1690b0322d795B80A76ab2Cd1a0eAFd": "agree"
+      }
+    }
+  ],
+  "reads": [
+    {
+      "label": "api-positive:pre-freeze",
+      "method": "get_agreement",
+      "args": [
+        "1"
+      ],
+      "value": {
+        "agreement_id": "1",
+        "ambiguity_report": "[]",
+        "appeal_deadline_at": 0,
+        "buyer": "0xd24BF30b522cCF610b1E65C614901050241c040D",
+        "buyer_acknowledged_ambiguity": false,
+        "buyer_consents_expire": false,
+        "buyer_economic_terms_hash": "",
+        "buyer_ready_to_finalize": false,
+        "buyer_wants_procedural_review": false,
+        "delivery_deadline_at": 0,
+        "frozen_at": 0,
+        "funded_amount": 10000000000000,
+        "latest_appeal_id": "",
+        "latest_evaluation_id": "",
+        "latest_warranty_claim_id": "",
+        "milestones_defined": false,
+        "phase": "FUNDED",
+        "policy_id": "speclock-core",
+        "policy_version": 2,
+        "procedural_review_used": false,
+        "profile": "api_delivery",
+        "provider": "0xB61b4E91cC6C138526EF97B656980f5D7d295a7F",
+        "provider_acknowledged_ambiguity": false,
+        "provider_consents_expire": false,
+        "provider_economic_terms_hash": "",
+        "provider_ready_to_finalize": false,
+        "provider_wants_procedural_review": false,
+        "refunded_amount": 0,
+        "released_amount": 0,
+        "resubmission_deadline_at": 0,
+        "resubmission_requested_at": 0,
+        "retained_amount": 0,
+        "settlement_id": "",
+        "spec_fingerprint": "430bad8b1e2a09f8d4a62ac25d0aea659e07eb63d679b695da27afba6ece7c75",
+        "uses_milestones": false,
+        "warranty_bps": 0,
+        "warranty_deadline_at": 0,
+        "warranty_held_amount": 0,
+        "warranty_status": "NONE"
+      }
+    },
+    {
+      "label": "api-positive:frozen-state",
+      "method": "get_agreement",
+      "args": [
+        "1"
+      ],
+      "value": {
+        "agreement_id": "1",
+        "ambiguity_report": "[]",
+        "appeal_deadline_at": 0,
+        "buyer": "0xd24BF30b522cCF610b1E65C614901050241c040D",
+        "buyer_acknowledged_ambiguity": false,
+        "buyer_consents_expire": false,
+        "buyer_economic_terms_hash": "",
+        "buyer_ready_to_finalize": false,
+        "buyer_wants_procedural_review": false,
+        "delivery_deadline_at": 1792946444,
+        "frozen_at": 1792341644,
+        "funded_amount": 10000000000000,
+        "latest_appeal_id": "",
+        "latest_evaluation_id": "",
+        "latest_warranty_claim_id": "",
+        "milestones_defined": false,
+        "phase": "FROZEN",
+        "policy_id": "speclock-core",
+        "policy_version": 2,
+        "procedural_review_used": false,
+        "profile": "api_delivery",
+        "provider": "0xB61b4E91cC6C138526EF97B656980f5D7d295a7F",
+        "provider_acknowledged_ambiguity": false,
+        "provider_consents_expire": false,
+        "provider_economic_terms_hash": "",
+        "provider_ready_to_finalize": false,
+        "provider_wants_procedural_review": false,
+        "refunded_amount": 0,
+        "released_amount": 0,
+        "resubmission_deadline_at": 0,
+        "resubmission_requested_at": 0,
+        "retained_amount": 0,
+        "settlement_id": "",
+        "spec_fingerprint": "430bad8b1e2a09f8d4a62ac25d0aea659e07eb63d679b695da27afba6ece7c75",
+        "uses_milestones": false,
+        "warranty_bps": 0,
+        "warranty_deadline_at": 0,
+        "warranty_held_amount": 0,
+        "warranty_status": "NONE"
+      }
+    },
+    {
+      "label": "api-positive:evaluation",
+      "method": "get_evaluation",
+      "args": [
+        "1-eval1"
+      ],
+      "value": {
+        "agreement_id": "1",
+        "appeal_deadline_at": 1792514525,
+        "created_at": 1792341725,
+        "evaluation_id": "1-eval1",
+        "evidence_bindings": {
+          "c1": [
+            "1-ev1"
+          ]
+        },
+        "evidence_snapshot_commitment": "db095331168f9ef0668d4d42f451f76ee47260e2eda23ef7c534bac316fa32ce",
+        "failure_attribution": "UNKNOWN",
+        "findings": [
+          {
+            "attribution": "UNKNOWN",
+            "criterion_id": "c1",
+            "finding": "PASS",
+            "rationale": "HTTP 200 with schema-consistent body",
+            "sufficiency": "SUFFICIENT"
+          }
+        ],
+        "overall_finding": "PASS",
+        "profile": "api_delivery",
+        "round": 1,
+        "status": "PROVISIONAL"
+      }
+    },
+    {
+      "label": "api-positive:settlement",
+      "method": "get_settlement",
+      "args": [
+        "1"
+      ],
+      "value": {
+        "refunded_to_buyer": 0,
+        "released_to_provider": 10000000000000,
+        "retained": 0,
+        "settlement_id": "1-st1",
+        "terminal_phase": "SETTLED"
+      }
+    },
+    {
+      "label": "api-positive:buyer-withdraw:claimable-before",
+      "method": "get_claimable",
+      "args": [
+        "0xd24BF30b522cCF610b1E65C614901050241c040D"
+      ],
+      "value": 0
+    },
+    {
+      "label": "api-positive:provider-withdraw:claimable-before",
+      "method": "get_claimable",
+      "args": [
+        "0xB61b4E91cC6C138526EF97B656980f5D7d295a7F"
+      ],
+      "value": 10000000000000
+    }
+  ],
+  "balanceChanges": [
+    {
+      "label": "api-positive:provider-withdraw",
+      "beforeWei": "10000000000000",
+      "afterWei": "20000000000000",
+      "deltaWei": "10000000000000",
+      "claimableWei": "10000000000000",
+      "childTransfers": [
+        {
+          "hash": "0x82e7d8428b9e49c619198659d4a47dbcb78bdcc97e75b71b08541c931348a88e",
+          "status": "FINALIZED",
+          "result_name": "NO_MAJORITY",
+          "execution_result": null,
+          "value_credited": true,
+          "value": "10000000000000"
+        }
+      ]
+    }
+  ],
+  "sourceFetches": {
+    "api-positive": {
+      "digest": "bab3dfd2a6c992e4bf589eee05fc9650cc9d6988660b947a7a87b99420d108f9",
+      "bytes": 429,
+      "status": 200
+    }
+  },
+  "agreements": {
+    "api-positive": "1"
+  },
+  "expected": {
+    "api-positive": {
+      "expected": "PASS",
+      "actual": "PASS",
+      "sufficiency": "SUFFICIENT",
+      "evaluationId": "1-eval1"
+    }
+  }
+}
