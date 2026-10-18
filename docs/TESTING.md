@@ -29,8 +29,8 @@ print its checkmark output. The initial CP1252 console attempt raised `UnicodeEn
 Verified from GitHub clone `6cb9e27c2729a5f7cde89b4e7e2b5b1df0dc192b` in
 `C:\Users\USERpc\AppData\Local\Temp\speclock-clean-6cb9e27` using committed files only. Installed
 `requirements-dev.txt`, ran both GenVM lint/schema commands, and ran `pytest -q tests/direct --tb=short`:
-**89 passed**; lint and validation passed. The final follow-up commit changes only this verification report, not
-contract source, tests, dependencies, or runtime configuration.
+**89 passed**; lint and validation passed. The final follow-up commit changes only verification/submission
+documentation, not contract source, tests, dependencies, or runtime configuration.
 
 ## Gate E — Studionet
 
