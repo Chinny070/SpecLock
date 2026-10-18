@@ -1,6 +1,23 @@
 # Deployment
 
-## Latest reviewer-fix release — deployed and exercised (2026-10-18)
+## Current release — deployed, lifecycle checks pending (2026-10-18)
+
+| Field | Value |
+|---|---|
+| Network / chain | GenLayer Studio Network / `61999` |
+| Contract | `0xDFb69c1890F72c7b791A938ed36C5103582E6F19` |
+| Deployment transaction | `0x47a258b79297644bce2d54ba8eea678177b27856181577b685d9d3adfbfc35c3` |
+| Deployment result | `FINALIZED`, `MAJORITY_AGREE`, 5/5 validators voted `AGREE`, leader `execution_result: SUCCESS` |
+| Source SHA-256 | `CEC00C69E57E6AE1B70C77BE49CFFEEB912F2D55D15E42AF75A2B6687ABB6F5C` |
+| Callable schema | 47 methods (20 views, 27 writes); `genlayer schema` succeeded |
+| Readback | `get_reputation` returned zeroed counters for the configured deployer |
+
+The source returned by `genlayer code` matched the local SHA-256 after normalizing the CLI's Windows line endings to LF. The transaction was submitted through the active configured `my-studionet-wallet` on chain `61999`; its address and balance were verified before submission. The deployment and read-only schema/reputation calls are confirmed. No lifecycle transactions have yet been executed against this release.
+
+The live lifecycle blocker is signer availability: the active authorized configuration exposes one signer, but every requested agreement lifecycle needs two distinct parties (and #17 specifically needs distinct bilateral acknowledgements). I did not inspect or unlock other local wallets, generate/import a signer, or impersonate a party. The smallest next action is to make a second authorized SpecLock test signer available through the supported GenLayer wallet/CLI account selection flow. With that signer, run the named capabilities' lifecycle transactions and record their finalized outcomes. Prior approved value-transfer ceilings remain in force; fees are outside that value ceiling under the user's latest instruction, but exact fees should still be recorded.
+
+
+## Prior reviewer-fix release — deployed and exercised (2026-10-18)
 
 | Field | Value |
 |---|---|
@@ -15,7 +32,7 @@ This is the exact current `contracts/speclock.py` source deployed by the recorde
 
 Direct Mode tests: 94 passed. GenVM lint and schema validation: passed (3 checks; 45 methods). Clean-clone verification of commit `b6fdb8a6e02b93acaa6d2dc942bf04b9edff96df` also passed 94 tests and both lint commands with UTF-8 output enabled.
 
-The candidate release does not eliminate the disclosed partial capabilities (#12, #19, #21, #33), the child-transfer recovery limitation, or the historical credential exposure. The candidate's new bilateral ambiguity acknowledgement is covered locally but was not separately exercised live. Recorded gross transfer volume is 0.017038 GEN before unitemized historical fees; see the ledger for the exact accounting limits. This is not an exhaustive 38-capability verification claim.
+The current release does not eliminate the disclosed partial capabilities (#12, #19, #21, #33), the child-transfer recovery limitation, or the historical credential exposure. The new bilateral ambiguity acknowledgement is covered locally but was not separately exercised live. Recorded gross transfer volume is 0.017038 GEN before unitemized historical fees; the latest deployment fee is not reconciled. This is not an exhaustive 38-capability verification claim.
 
 ## Historical release: rejected-value refunds and warranty digest binding
 
@@ -329,4 +346,4 @@ All remain live on-chain (nothing can be un-deployed).
 
 ## Source/commit record
 
-The latest deployment is `0x142A372b4cA7cf3784327DFA2e2B0eCF45D4eA14` (source SHA-256 `0E7A7723C259DCF1CFAAEC8AFE62F873D6746335D63E9D8A1C2C7B25DFC4A1FE`). Its deployment finalized with `MAJORITY_AGREE` and leader `SUCCESS`; schema, 94 Direct Mode tests, lint, and candidate-specific API/agent, warranty, milestone, and payout evidence are recorded above and in `docs/evidence/studionet-reviewer-fix-2026-10-18.md`.
+The current deployment is `0xDFb69c1890F72c7b791A938ed36C5103582E6F19` (source SHA-256 `CEC00C69E57E6AE1B70C77BE49CFFEEB912F2D55D15E42AF75A2B6687ABB6F5C`). Its deployment finalized with 5/5 `AGREE` votes and leader `SUCCESS`; schema and a read-only view succeeded. Lifecycle evidence on this deployment remains pending; the prior `0x142A...` release's lifecycle evidence is preserved above and in `docs/evidence/studionet-reviewer-fix-2026-10-18.md`.

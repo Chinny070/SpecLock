@@ -4,7 +4,7 @@
 
 `DRAFT → ACCEPTED → FUNDED → FROZEN → SUBMITTED → EVALUATING(implicit) → PROVISIONAL_VERDICT → (APPEALED → RE_EVALUATING → PROVISIONAL_VERDICT)* → FINALIZED → SETTLED | RECOVERY_PENDING → REFUNDED`
 
-Side branches: `CANCELLED` (from `DRAFT`/`ACCEPTED`, single-party), `EXPIRED` (from `FROZEN` or `RESUBMISSION_REQUESTED` after the transaction-time delivery/remediation window; before expiry, funded wind-down requires both parties' consent), and `RESUBMISSION_REQUESTED` (from `PROVISIONAL_VERDICT`, bounded by `max_resubmissions`). GenLayer documents `datetime.now(timezone.utc)` as transaction-pinned and validator-consistent. Deadline changes described here are in the local candidate and are not yet on the deployed release.
+Side branches: `CANCELLED` (from `DRAFT`/`ACCEPTED`, single-party), `EXPIRED` (from `FROZEN`, `SUBMITTED`, or `RESUBMISSION_REQUESTED` after the transaction-time delivery/remediation window; before expiry, funded wind-down requires both parties' consent), and `RESUBMISSION_REQUESTED` (from `PROVISIONAL_VERDICT`, bounded by `max_resubmissions`). GenLayer documents `datetime.now(timezone.utc)` as transaction-pinned and validator-consistent. This source is deployed at `0xDFb69c1890F72c7b791A938ed36C5103582E6F19`; deadline transitions remain unverified by a lifecycle write on that release.
 
 Note: there is no separate stored `EVALUATING` phase — `request_evaluation` runs the (nondeterministic) evaluation synchronously within the same call that transitions `SUBMITTED`/`RE_EVALUATING` → `PROVISIONAL_VERDICT`; this is a simplification versus the brief's illustrative phase list, made because GenVM's nondeterministic execution model does not require (or cleanly support, in Direct Mode) a separate pending-evaluation phase with asynchronous completion.
 
@@ -27,7 +27,7 @@ Note: there is no separate stored `EVALUATING` phase — `request_evaluation` ru
 | FINALIZED | `settle` | either party | `settlement_id==""` | deterministic payout split from `overall_finding`; `UNVERIFIABLE` retains funds instead of awarding either party | SETTLED or RECOVERY_PENDING |
 | RECOVERY_PENDING | `recover_inconclusive` | either party | — | full refund to buyer | REFUNDED |
 
-Before their deadlines, `finalize_verdict` and the FROZEN branch of `cancel_or_expire` require distinct buyer/provider consent. After deadlines, the candidate permits permissionless progress. The currently deployed release predates these deadline changes.
+Before their deadlines, `finalize_verdict` and the FROZEN/SUBMITTED branches of `cancel_or_expire` require the applicable party consent; after the relevant deadline, permissionless progress is permitted. This is in the deployed source, but deadline transitions have not yet been exercised by live lifecycle calls on the current release.
 
 `TERMINAL_PHASES = {SETTLED, CANCELLED, EXPIRED, REFUNDED}`; `is_consumable()` returns False for all of these. `is_final()` additionally includes `FINALIZED`.
 

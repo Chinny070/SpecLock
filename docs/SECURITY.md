@@ -4,11 +4,11 @@
 
 `MAX_CRITERIA=32`, `MAX_SPEC_CHARS=20000`, `MAX_CRITERION_CHARS=2000`, `MAX_EVIDENCE_URL_CHARS=2000`, `MAX_EVIDENCE_METADATA_CHARS=4000`, `MAX_EVIDENCE_PER_AGREEMENT=64`, `MAX_APPEAL_ROUNDS=2`, `MAX_APPEAL_GROUNDS_CHARS=2000`, `MAX_RESUBMISSIONS=3` (per-agreement cap, configurable lower at creation), `MAX_RATIONALE_CHARS=4000`, `MAX_FETCH_BYTES=200000`, `PAGE_SIZE_MAX=50`.
 
-The local candidate uses `datetime.now(timezone.utc)` as a transaction-pinned timestamp for deadlines; no caller can supply the clock. GenLayer's official runtime documentation says validators observe the same transaction timestamp. Direct Mode tests exercise time advancement and boundary paths. The deployed Studionet release predates these deadline changes; see `docs/GENLAYER_CAPABILITIES.md` and `docs/TESTING.md`.
+The deployed source uses `datetime.now(timezone.utc)` as a transaction-pinned timestamp for deadlines; no caller can supply the clock. GenLayer's official runtime documentation says validators observe the same transaction timestamp. Direct Mode tests exercise time advancement and boundary paths. The current deployment at `0xDFb69c1890F72c7b791A938ed36C5103582E6F19` has not yet had deadline lifecycle calls executed; deployment and read-only-call evidence is not behavioral verification. See `docs/GENLAYER_CAPABILITIES.md` and `docs/TESTING.md`.
 
 ## URL / SSRF handling
 
-`_validate_url` rejects non-HTTPS schemes, embedded userinfo, standard and legacy numeric nonpublic IP literals, scoped IPs, and local hostname suffixes. These candidate changes have Direct Mode coverage but are not deployed. They are defense-in-depth, not a proof against DNS rebinding or a substitute for GenVM's egress policy.
+`_validate_url` rejects non-HTTPS schemes, embedded userinfo, standard and legacy numeric nonpublic IP literals, scoped IPs, and local hostname suffixes. These checks are in the current deployed source and have Direct Mode coverage; adversarial live URL evaluation has not yet been run against this release. They are defense-in-depth, not a proof against DNS rebinding or a substitute for GenVM's egress policy.
 
 ## Parser hardening
 
