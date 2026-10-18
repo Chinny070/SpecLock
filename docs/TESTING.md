@@ -26,11 +26,11 @@ print its checkmark output. The initial CP1252 console attempt raised `UnicodeEn
 
 ## Gate D — Clean clone
 
-Verified from GitHub clone `3a9c0b08530c69844438856c8663ca332d824fa8` in
-`C:\Users\USERpc\AppData\Local\Temp\speclock-clean-3a9c0b0` using committed files only. Installed
+Verified from GitHub clone `6cb9e27c2729a5f7cde89b4e7e2b5b1df0dc192b` in
+`C:\Users\USERpc\AppData\Local\Temp\speclock-clean-6cb9e27` using committed files only. Installed
 `requirements-dev.txt`, ran both GenVM lint/schema commands, and ran `pytest -q tests/direct --tb=short`:
-**89 passed**, lint and validation passed. No contract source or tests were changed after this check; a later
- documentation-only commit updates this record.
+**89 passed**; lint and validation passed. The final follow-up commit changes only this verification report, not
+contract source, tests, dependencies, or runtime configuration.
 
 ## Gate E — Studionet
 
