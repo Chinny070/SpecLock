@@ -119,6 +119,7 @@ def test_warranty_claim_rejected_releases_to_provider(direct_vm, direct_deploy, 
     assert claim["resolution"] == "REJECTED"
     agreement = contract.get_agreement(agreement_id)
     assert agreement["warranty_status"] == "RELEASED"
+    assert agreement["warranty_held_amount"] == 0
 
     from genlayer.py.types import Address
     assert contract.get_claimable(str(Address(bytes(direct_bob)))) == 800 + 200 + 20  # release + holdback + bond
@@ -226,6 +227,46 @@ def test_warranty_terms_need_both_parties_before_freeze(direct_vm, direct_deploy
     assert contract.accept_economic_terms(agreement_id) is True
     direct_vm.sender = direct_alice
     contract.freeze_agreement(agreement_id, False)
+
+
+def test_expired_warranty_releases_holdback_without_buyer_action(direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie):
+    from datetime import datetime, timezone
+    contract = direct_deploy(CONTRACT)
+    agreement_id = _funded_agreement(contract, direct_vm, direct_alice, direct_bob)
+    direct_vm.sender = direct_alice
+    contract.enable_warranty(agreement_id, 2000)
+    direct_vm.sender = direct_bob
+    contract.accept_economic_terms(agreement_id)
+    direct_vm.sender = direct_alice
+    contract.freeze_agreement(agreement_id, False)
+    body = json.dumps({"status": "ok"})
+    contract.submit_evidence(agreement_id, "https://api.example.com/health", hashlib.sha256(body.encode()).hexdigest(), json.dumps({"criterion_id": "c1"}))
+    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": body})
+    contract.request_evaluation(agreement_id)
+    direct_vm.sender = direct_alice
+    contract.finalize_verdict(agreement_id)
+    direct_vm.sender = direct_bob
+    contract.finalize_verdict(agreement_id)
+    contract.settle(agreement_id)
+
+    state = contract.get_agreement(agreement_id)
+    assert state["warranty_status"] == "HELD"
+    assert state["warranty_held_amount"] == 200
+    direct_vm.sender = direct_alice
+    with direct_vm.expect_revert():
+        contract.expire_warranty(agreement_id)
+
+    direct_vm.warp(datetime.fromtimestamp(state["warranty_deadline_at"], timezone.utc).isoformat())
+    direct_vm.sender = direct_charlie
+    with direct_vm.expect_revert():
+        contract.expire_warranty(agreement_id)  # deadline is inclusive
+    direct_vm.warp(datetime.fromtimestamp(state["warranty_deadline_at"] + 1, timezone.utc).isoformat())
+    contract.expire_warranty(agreement_id)
+    state = contract.get_agreement(agreement_id)
+    assert state["warranty_status"] == "RELEASED"
+    assert state["warranty_held_amount"] == 0
+    from genlayer.py.types import Address
+    assert contract.get_claimable(str(Address(bytes(direct_bob)))) == 1000
 
 
 def test_file_warranty_claim_requires_held_status_and_exact_bond(direct_vm, direct_deploy, direct_alice, direct_bob):

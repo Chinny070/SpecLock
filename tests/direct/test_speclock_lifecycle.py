@@ -203,6 +203,42 @@ def test_unrelated_party_cannot_consent_to_wind_down(direct_vm, direct_deploy, d
         contract.cancel_or_expire(agreement_id)
 
 
+def test_delivery_deadline_permissionlessly_refunds_and_rejects_late_evidence(direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie):
+    from datetime import datetime, timezone
+    import hashlib
+    import json
+
+    direct_vm.warp("2026-01-01T00:00:00+00:00")
+    contract = direct_deploy(CONTRACT)
+    agreement_id = _create(contract, direct_vm, direct_alice, direct_bob)
+    direct_vm.sender = direct_bob
+    contract.accept_agreement(agreement_id)
+    direct_vm.sender = direct_alice
+    direct_vm.value = 100
+    contract.fund_agreement(agreement_id, 100)
+    direct_vm.value = 0
+    contract.freeze_agreement(agreement_id, False)
+    deadline = contract.get_agreement(agreement_id)["delivery_deadline_at"]
+    direct_vm.sender = direct_bob
+    contract.submit_evidence(agreement_id, "https://api.example.com/health", hashlib.sha256(b"{}").hexdigest(), json.dumps({"criterion_id": "c1"}))
+    direct_vm.warp(datetime.fromtimestamp(deadline, timezone.utc).isoformat())
+    contract.submit_evidence(agreement_id, "https://api.example.com/health", hashlib.sha256(b"{}").hexdigest(), json.dumps({"criterion_id": "c1"}))
+    receipts_before = contract.list_evidence(agreement_id, 0, 10)
+    direct_vm.warp(datetime.fromtimestamp(deadline + 1, timezone.utc).isoformat())
+
+    direct_vm.sender = direct_bob
+    with direct_vm.expect_revert():
+        contract.submit_evidence(agreement_id, "https://api.example.com/health", hashlib.sha256(b"{}").hexdigest(), json.dumps({"criterion_id": "c1"}))
+    assert contract.list_evidence(agreement_id, 0, 10) == receipts_before
+    with direct_vm.expect_revert():
+        contract.request_evaluation(agreement_id)
+    direct_vm.sender = direct_charlie
+    contract.cancel_or_expire(agreement_id)
+    state = contract.get_agreement(agreement_id)
+    assert state["phase"] == "EXPIRED"
+    assert contract.get_settlement(agreement_id)["refunded_to_buyer"] == 100
+
+
 def test_provider_as_plain_hex_string_address_is_accepted(direct_vm, direct_deploy, direct_alice, direct_bob):
     """Regression test for a real production defect found during live
     Studionet testing: genlayer-js's standard writeContract API passes an

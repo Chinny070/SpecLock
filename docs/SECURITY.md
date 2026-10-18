@@ -4,11 +4,11 @@
 
 `MAX_CRITERIA=32`, `MAX_SPEC_CHARS=20000`, `MAX_CRITERION_CHARS=2000`, `MAX_EVIDENCE_URL_CHARS=2000`, `MAX_EVIDENCE_METADATA_CHARS=4000`, `MAX_EVIDENCE_PER_AGREEMENT=64`, `MAX_APPEAL_ROUNDS=2`, `MAX_APPEAL_GROUNDS_CHARS=2000`, `MAX_RESUBMISSIONS=3` (per-agreement cap, configurable lower at creation), `MAX_RATIONALE_CHARS=4000`, `MAX_FETCH_BYTES=200000`, `PAGE_SIZE_MAX=50`.
 
-There is no caller-supplied time/clock bound in this contract at all (a prior revision had one; it was audited, found manipulable, and removed — see `docs/THREAT_MODEL.md` "clock redesign"). Deadline-shaped behavior is now enforced by mutual two-party consent (`finalize_verdict`, `cancel_or_expire`), which cannot be forced by a single sender regardless of any value they might supply.
+The local candidate uses `datetime.now(timezone.utc)` as a transaction-pinned timestamp for deadlines; no caller can supply the clock. GenLayer's official runtime documentation says validators observe the same transaction timestamp. Direct Mode tests exercise time advancement and boundary paths. The deployed Studionet release predates these deadline changes; see `docs/GENLAYER_CAPABILITIES.md` and `docs/TESTING.md`.
 
 ## URL / SSRF handling
 
-`_validate_url` rejects: non-`https` schemes, embedded userinfo (`user:pass@`), and a hostname blocklist (`localhost`, `127.`, `0.0.0.0`, `::1`, `169.254.`, `10.`, `192.168.`). This is a contract-level defense-in-depth check; it does not replace and was not verified against GenVM's own network egress policy, which could not be independently inspected from this environment (see `docs/GENLAYER_CAPABILITIES.md`).
+`_validate_url` rejects non-HTTPS schemes, embedded userinfo, standard and legacy numeric nonpublic IP literals, scoped IPs, and local hostname suffixes. These candidate changes have Direct Mode coverage but are not deployed. They are defense-in-depth, not a proof against DNS rebinding or a substitute for GenVM's egress policy.
 
 ## Parser hardening
 

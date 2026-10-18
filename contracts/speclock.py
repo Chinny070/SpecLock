@@ -32,9 +32,11 @@ recorded in `DECISION.md` item 10 and `docs/DEPLOYMENT.md`.
 """
 
 import hashlib
+import ipaddress
 import json
 import re
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 from genlayer import *
 
@@ -100,8 +102,15 @@ PAGE_SIZE_MAX = 50
 MAX_MILESTONES = 8  # bounded count, analogous to MAX_CRITERIA
 MAX_WARRANTY_BPS = 5_000  # warranty holdback cannot exceed 50% of a release
 
+# Network-attested transaction-time windows. Durations are fixed by the
+# policy version; no caller supplies a timestamp or controls elapsed time.
+DELIVERY_WINDOW_SECONDS = 7 * 24 * 60 * 60
+RESUBMISSION_WINDOW_SECONDS = 7 * 24 * 60 * 60
+APPEAL_WINDOW_SECONDS = 48 * 60 * 60
+WARRANTY_WINDOW_SECONDS = 30 * 24 * 60 * 60
+
 POLICY_ID = "speclock-core"
-POLICY_VERSION = 1
+POLICY_VERSION = 2
 
 ERROR_EXPECTED = "[EXPECTED]"
 ERROR_EXTERNAL = "[EXTERNAL]"
@@ -171,32 +180,12 @@ ATTRIBUTION_EVIDENCE = "EVIDENCE"
 ATTRIBUTION_UNKNOWN = "UNKNOWN"
 
 
-# NOTE on time (re-audited — see DECISION.md "clock redesign" and
-# docs/GENLAYER_CAPABILITIES.md): the installed py-genlayer runner's
-# `gl.message` exposes no block timestamp, and the raw `message_raw['datetime']`
-# field that the SDK does define is not wired through by this installed
-# `genlayer-test` version's Direct Mode harness for post-deploy calls (its own
-# `get_message_raw()` helper is unreferenced dead code — confirmed by source
-# inspection), so it could not be verified to behave correctly even as a
-# nominal "intended" time source. A prior revision of this contract instead
-# accepted a caller-supplied `now: int` on every time-gated call, bounded only
-# by a monotonic ratchet — that scheme was audited and rejected: a party who
-# is interested in a specific outcome can always pick a `now` that serves
-# them (an early value to keep contesting, or a late value to force
-# closure), and nothing in the contract could independently check it against
-# real elapsed time. Rather than ship an unenforceable deadline, SpecLock now
-# uses NO caller-asserted time anywhere. Every phase transition that used to
-# depend on "has enough time passed" instead depends on either (a) an
-# explicit appeal actually being filed (always available, never time-gated,
-# bounded only by `max_appeal_rounds`), or (b) BOTH parties explicitly and
-# separately consenting to move on (`finalize_verdict` from a provisional
-# verdict, `cancel_or_expire` from FROZEN) — a mutual two-call gate that
-# requires two distinct authorized senders and is not satisfiable by a single
-# self-interested party. `_next_seq()` provides a purely contract-internal,
-# zero-attacker-input monotonic counter used only for audit-trail ordering
-# (it is explicitly NOT wall-clock time and nothing security-relevant is
-# gated on it).
-
+def _transaction_timestamp() -> int:
+    """Read GenVM's deterministic transaction-pinned timestamp. The
+    transaction-context API maps datetime.now() to the transaction time seen
+    consistently by validators. Direct Mode's warp() tests this behavior;
+    callers cannot pass or alter the timestamp."""
+    return int(datetime.now(timezone.utc).timestamp())
 
 def _spec_fingerprint(spec_text: str, criteria_json: str, policy_id: str, policy_version: int) -> str:
     blob = json.dumps(
@@ -236,9 +225,61 @@ def _validate_url(url: str) -> None:
         host_only = host[1 : host.index("]")]
     else:
         host_only = host.split(":")[0]
+    host_only = host_only.rstrip(".")
+    if "%" in host_only:
+        raise gl.vm.UserError(f"{ERROR_EXPECTED} scoped IP literals are not allowed")
+    ip_value = _parse_numeric_ip(host_only)
+    if ip_value is not None and _is_nonpublic_ip(ip_value):
+        raise gl.vm.UserError(f"{ERROR_EXPECTED} non-public IP address is not allowed")
+    if ip_value is None and re.fullmatch(r"[0-9a-fx.]+", host_only):
+        raise gl.vm.UserError(f"{ERROR_EXPECTED} malformed numeric IP address")
     for blocked in BLOCKED_HOST_PATTERNS:
         if host_only == blocked or host_only.startswith(blocked):
             raise gl.vm.UserError(f"{ERROR_EXPECTED} blocked host for evidence URL")
+    if host_only.endswith((".localhost", ".local", ".internal")):
+        raise gl.vm.UserError(f"{ERROR_EXPECTED} local hostnames are not allowed")
+
+
+def _parse_numeric_ip(host: str):
+    """Parse standard IP literals and legacy inet_aton IPv4 forms. Some
+    HTTP clients normalize integer, octal, and shortened IPv4 addresses, so
+    string-prefix checks alone are not a sufficient SSRF defense."""
+    try:
+        return ipaddress.ip_address(host)
+    except ValueError:
+        pass
+    parts = host.split(".")
+    if not 1 <= len(parts) <= 4:
+        return None
+    numbers = []
+    for part in parts:
+        try:
+            if part.lower().startswith("0x"):
+                number = int(part[2:], 16)
+            elif len(part) > 1 and part.startswith("0"):
+                number = int(part, 8)
+            else:
+                number = int(part, 10)
+        except ValueError:
+            return None
+        numbers.append(number)
+    if any(number < 0 or number > 255 for number in numbers[:-1]):
+        return None
+    final_bits = 8 * (5 - len(numbers))
+    if numbers[-1] >= (1 << final_bits):
+        return None
+    value = numbers[-1]
+    for index, number in enumerate(numbers[:-1]):
+        value += number << (8 * (3 - index))
+    if value > 0xFFFFFFFF:
+        return None
+    return ipaddress.IPv4Address(value)
+
+
+def _is_nonpublic_ip(address) -> bool:
+    # `is_global` also excludes shared-address space (100.64.0.0/10) and
+    # special-use ranges that are neither `is_private` nor `is_reserved`.
+    return not address.is_global
 
 
 def _evidence_host(url: str) -> str:
@@ -330,7 +371,8 @@ class Agreement:
     max_appeal_rounds: u256
     appeal_rounds_used: u256
     created_at: u256  # logical sequence number (see _next_seq), NOT wall-clock time
-    frozen_at: u256  # logical sequence number, NOT wall-clock time
+    frozen_at: u256  # GenVM transaction timestamp (Unix seconds)
+    resubmission_requested_at: u256  # GenVM transaction timestamp (Unix seconds)
     buyer_ready_to_finalize: bool
     provider_ready_to_finalize: bool
     buyer_consents_expire: bool
@@ -348,6 +390,7 @@ class Agreement:
     milestones_defined: bool
     warranty_bps: u256  # 0 = disabled; fraction (basis points) of a PASS/PARTIAL release withheld as a warranty holdback
     warranty_held_amount: u256
+    warranty_deadline_at: u256  # GenVM transaction timestamp (Unix seconds)
     warranty_status: str  # NONE | HELD | CLAIMED | RELEASED
     latest_warranty_claim_id: str
     buyer_economic_terms_hash: str
@@ -706,6 +749,7 @@ class SpecLock(gl.Contract):
             appeal_rounds_used=u256(0),
             created_at=now,
             frozen_at=u256(0),
+            resubmission_requested_at=u256(0),
             buyer_ready_to_finalize=False,
             provider_ready_to_finalize=False,
             buyer_consents_expire=False,
@@ -723,6 +767,7 @@ class SpecLock(gl.Contract):
             milestones_defined=False,
             warranty_bps=u256(0),
             warranty_held_amount=u256(0),
+            warranty_deadline_at=u256(0),
             warranty_status="NONE",
             latest_warranty_claim_id="",
             buyer_economic_terms_hash="",
@@ -920,18 +965,15 @@ class SpecLock(gl.Contract):
                 self.agreements[agreement_id] = agreement
                 return
         agreement.phase = PHASE_FROZEN
-        agreement.frozen_at = u256(self._next_seq())
+        agreement.frozen_at = u256(_transaction_timestamp())
         self.agreements[agreement_id] = agreement
 
     @gl.public.write
     def cancel_or_expire(self, agreement_id: str) -> None:
-        """Cancel (pre-funding, single party) or wind down a stalled FROZEN
-        agreement. The FROZEN branch requires BOTH buyer and provider to
-        separately call this method before it takes effect — a deliberate
-        mutual-consent gate replacing the previous (audited and rejected)
-        wall-clock deadline design; see the time note near the top of this
-        file and docs/THREAT_MODEL.md. Neither party can unilaterally force
-        expiry/refund."""
+        """Cancel before funding, or refund an agreement whose trusted
+        transaction-time delivery/resubmission window elapsed. Before the
+        applicable deadline, a funded wind-down still requires both parties'
+        consent; after it, either party or a third party may trigger refund."""
         agreement = self._get_agreement(agreement_id)
         self._require(agreement.phase not in TERMINAL_PHASES, "agreement already terminal")
         caller = gl.message.sender_address
@@ -940,16 +982,27 @@ class SpecLock(gl.Contract):
             agreement.phase = PHASE_CANCELLED
             self.agreements[agreement_id] = agreement
             return
-        self._require(
-            agreement.phase in (PHASE_FROZEN, PHASE_RESUBMISSION_REQUESTED),
-            f"agreement is not eligible for cancel/expire in phase {agreement.phase}",
-        )
+        self._require(agreement.phase in (PHASE_FROZEN, PHASE_SUBMITTED, PHASE_RESUBMISSION_REQUESTED),
+                      f"agreement is not eligible for cancel/expire in phase {agreement.phase}")
         self._require(
             not agreement.uses_milestones,
             "cancel/expire wind-down is not yet supported for milestone-based agreements "
             "(it would refund the full funded_amount even if some milestones have already settled independently)",
         )
-        self._require(self._is_party(agreement, caller), "only a party may consent to wind-down")
+        now = _transaction_timestamp()
+        deadline = (
+            int(agreement.frozen_at) + DELIVERY_WINDOW_SECONDS
+            if agreement.phase in (PHASE_FROZEN, PHASE_SUBMITTED)
+            else int(agreement.resubmission_requested_at) + RESUBMISSION_WINDOW_SECONDS
+        )
+        if now > deadline:
+            agreement.phase = PHASE_EXPIRED
+            if int(agreement.funded_amount) > 0:
+                self._settle(agreement, released=0, refunded=int(agreement.funded_amount), retained=0, terminal_phase=PHASE_EXPIRED)
+                return
+            self.agreements[agreement_id] = agreement
+            return
+        self._require(self._is_party(agreement, caller), "only a party may consent to wind-down before the deadline")
         if caller == agreement.buyer:
             self._require(not agreement.buyer_consents_expire, "buyer has already consented to wind-down")
             agreement.buyer_consents_expire = True
@@ -971,6 +1024,13 @@ class SpecLock(gl.Contract):
     def submit_evidence(self, agreement_id: str, url: str, declared_digest: str, metadata_json: str) -> str:
         agreement = self._get_agreement(agreement_id)
         self._require(agreement.phase in (PHASE_FROZEN, PHASE_SUBMITTED, PHASE_RESUBMISSION_REQUESTED, PHASE_APPEALED), "evidence not acceptable in this phase")
+        now = _transaction_timestamp()
+        if agreement.phase in (PHASE_FROZEN, PHASE_SUBMITTED):
+            self._require(now <= int(agreement.frozen_at) + DELIVERY_WINDOW_SECONDS,
+                          "delivery window elapsed; agreement can be refunded")
+        elif agreement.phase == PHASE_RESUBMISSION_REQUESTED:
+            self._require(now <= int(agreement.resubmission_requested_at) + RESUBMISSION_WINDOW_SECONDS,
+                          "resubmission window elapsed; agreement can be refunded")
         caller = gl.message.sender_address
         self._require(self._is_party(agreement, caller), "only a party may submit evidence")
         _validate_url(url)
@@ -1081,7 +1141,18 @@ class SpecLock(gl.Contract):
         )
         caller = gl.message.sender_address
         self._require(self._is_party(agreement, caller), "only a party may request evaluation")
-        now = self._next_seq()
+        now = _transaction_timestamp()
+        if agreement.phase == PHASE_SUBMITTED:
+            if int(agreement.resubmissions_used) > 0:
+                self._require(
+                    now <= int(agreement.resubmission_requested_at) + RESUBMISSION_WINDOW_SECONDS,
+                    "resubmission window elapsed; agreement can be refunded",
+                )
+            else:
+                self._require(
+                    now <= int(agreement.frozen_at) + DELIVERY_WINDOW_SECONDS,
+                    "delivery window elapsed; agreement can be refunded",
+                )
 
         self._freeze_all_evidence(agreement_id)
         snapshot = self._evidence_snapshot_commitment(agreement_id)
@@ -1474,11 +1545,9 @@ class SpecLock(gl.Contract):
 
     @gl.public.write.payable
     def file_appeal(self, agreement_id: str, challenged_finding_ids: list, grounds: str) -> str:
-        """No wall-clock appeal-window check (see the time note near the top
-        of this file): an appeal may be filed any time the agreement is still
-        sitting on a provisional verdict, bounded only by `max_appeal_rounds`.
-        Filing always takes precedence over the other party's finalize
-        consent — see `finalize_verdict`.
+        """An appeal must be filed within the transaction-time appeal window
+        opened by the latest provisional evaluation. Filing always takes
+        precedence over finalize consent while that window is open.
 
         Capability 29: a real-value appeal bond of `max(1, funded_amount //
         10)` must be sent with this call — a real cost to filing a
@@ -1499,6 +1568,8 @@ class SpecLock(gl.Contract):
             reason = "appeals are not yet supported for milestone-based agreements"
         elif agreement.phase != PHASE_PROVISIONAL_VERDICT:
             reason = "appeal only possible on a provisional verdict"
+        elif _transaction_timestamp() > int(self.evaluations[agreement.latest_evaluation_id].created_at) + APPEAL_WINDOW_SECONDS:
+            reason = "appeal window elapsed"
         elif not self._is_party(agreement, caller):
             reason = "only a party may appeal"
         elif int(agreement.appeal_rounds_used) >= int(agreement.max_appeal_rounds):
@@ -1623,6 +1694,10 @@ class SpecLock(gl.Contract):
         agreement = self._get_agreement(agreement_id)
         self._require(agreement.phase == PHASE_PROVISIONAL_VERDICT, "procedural review only possible on a provisional verdict")
         self._require(
+            _transaction_timestamp() <= int(self.evaluations[agreement.latest_evaluation_id].created_at) + APPEAL_WINDOW_SECONDS,
+            "procedural-review window elapsed",
+        )
+        self._require(
             int(agreement.appeal_rounds_used) >= int(agreement.max_appeal_rounds),
             "procedural review is only available once ordinary appeal rounds are exhausted",
         )
@@ -1651,11 +1726,16 @@ class SpecLock(gl.Contract):
         self._require(
             agreement.phase == PHASE_PROVISIONAL_VERDICT, "resubmission only possible on a provisional verdict"
         )
+        self._require(
+            _transaction_timestamp() <= int(self.evaluations[agreement.latest_evaluation_id].created_at) + APPEAL_WINDOW_SECONDS,
+            "resubmission request window elapsed",
+        )
         self._require(int(agreement.resubmissions_used) < int(agreement.max_resubmissions), "resubmission budget exhausted")
         caller = gl.message.sender_address
         self._require(self._is_party(agreement, caller), "only a party may request resubmission")
         agreement.resubmissions_used = u256(int(agreement.resubmissions_used) + 1)
         agreement.phase = PHASE_RESUBMISSION_REQUESTED
+        agreement.resubmission_requested_at = u256(_transaction_timestamp())
         self.agreements[agreement_id] = agreement
 
     # ---------------------------------------------------------------
@@ -1664,33 +1744,26 @@ class SpecLock(gl.Contract):
 
     @gl.public.write
     def finalize_verdict(self, agreement_id: str) -> bool:
-        """Finalize the current provisional verdict. There is no trustworthy
-        way to know "the appeal window has elapsed" (see the time note near
-        the top of this file), so finalization always requires BOTH buyer
-        and provider to separately call this method: the first call just
-        records that caller's consent and returns False (not yet finalized);
-        the second, distinct party's call completes finalization and returns
-        True. A party who disagrees can call `file_appeal` instead of
-        consenting, which immediately moves the agreement to PHASE_APPEALED
-        — `resolve_appeal` always produces a fresh provisional verdict
-        (via `request_evaluation`, which clears both consent flags), so
-        finalizing after an appeal still goes through this same mutual-
-        consent gate on the new verdict, never a bypass."""
+        """Finalize early by bilateral consent, or permissionlessly after
+        the latest evaluation's transaction-time appeal window has elapsed.
+        A timely appeal changes the phase and supersedes this evaluation."""
         agreement = self._get_agreement(agreement_id)
         self._require(agreement.phase == PHASE_PROVISIONAL_VERDICT, "nothing to finalize in this phase")
         caller = gl.message.sender_address
-        self._require(self._is_party(agreement, caller), "only a party may consent to finalize")
-        if caller == agreement.buyer:
-            self._require(not agreement.buyer_ready_to_finalize, "buyer has already consented to finalize")
-            agreement.buyer_ready_to_finalize = True
-        else:
-            self._require(not agreement.provider_ready_to_finalize, "provider has already consented to finalize")
-            agreement.provider_ready_to_finalize = True
-        if not (agreement.buyer_ready_to_finalize and agreement.provider_ready_to_finalize):
-            self.agreements[agreement_id] = agreement
-            return False
-
         evaluation = self.evaluations[agreement.latest_evaluation_id]
+        appeal_deadline = int(evaluation.created_at) + APPEAL_WINDOW_SECONDS
+        if _transaction_timestamp() <= appeal_deadline:
+            self._require(self._is_party(agreement, caller), "only a party may consent to finalize before the appeal deadline")
+            if caller == agreement.buyer:
+                self._require(not agreement.buyer_ready_to_finalize, "buyer has already consented to finalize")
+                agreement.buyer_ready_to_finalize = True
+            else:
+                self._require(not agreement.provider_ready_to_finalize, "provider has already consented to finalize")
+                agreement.provider_ready_to_finalize = True
+            if not (agreement.buyer_ready_to_finalize and agreement.provider_ready_to_finalize):
+                self.agreements[agreement_id] = agreement
+                return False
+
         evaluation.status = "FINAL"
         self.evaluations[evaluation.evaluation_id] = evaluation
         agreement.phase = PHASE_FINALIZED
@@ -1799,6 +1872,7 @@ class SpecLock(gl.Contract):
         if holdback > 0:
             agreement.warranty_held_amount = u256(holdback)
             agreement.warranty_status = "HELD"
+            agreement.warranty_deadline_at = u256(_transaction_timestamp() + WARRANTY_WINDOW_SECONDS)
         self._settle(agreement, released, refunded, retained, terminal_phase)
         return agreement.settlement_id
 
@@ -1830,6 +1904,21 @@ class SpecLock(gl.Contract):
         self._require(caller == agreement.buyer, "only the buyer may waive a warranty holdback")
         held = int(agreement.warranty_held_amount)
         agreement.warranty_status = "RELEASED"
+        agreement.warranty_held_amount = u256(0)
+        self.agreements[agreement_id] = agreement
+        self._credit(agreement.provider, held)
+
+    @gl.public.write
+    def expire_warranty(self, agreement_id: str) -> None:
+        """Permissionlessly release an unclaimed warranty holdback after
+        its fixed, transaction-time claim window, preventing indefinite fund
+        lock when the buyer is inactive."""
+        agreement = self._get_agreement(agreement_id)
+        self._require(agreement.warranty_status == "HELD", "no unclaimed warranty holdback")
+        self._require(_transaction_timestamp() > int(agreement.warranty_deadline_at), "warranty claim window has not elapsed")
+        held = int(agreement.warranty_held_amount)
+        agreement.warranty_status = "RELEASED"
+        agreement.warranty_held_amount = u256(0)
         self.agreements[agreement_id] = agreement
         self._credit(agreement.provider, held)
 
@@ -1855,6 +1944,8 @@ class SpecLock(gl.Contract):
         claim_criterion_id = self._warranty_claim_criterion(agreement, evidence_url, evidence_metadata_json)
         if agreement.warranty_status != "HELD":
             reason = "no active warranty holdback to claim against"
+        elif _transaction_timestamp() > int(agreement.warranty_deadline_at):
+            reason = "warranty claim window elapsed"
         elif caller != agreement.buyer:
             reason = "only the buyer may file a warranty claim"
         elif not (1 <= len(grounds) <= MAX_APPEAL_GROUNDS_CHARS):
@@ -2051,6 +2142,10 @@ class SpecLock(gl.Contract):
         )
         milestone = self._get_milestone(agreement_id, milestone_id)
         self._require(milestone.phase == MS_PENDING, "milestone evaluation already requested or completed")
+        self._require(
+            _transaction_timestamp() <= int(agreement.frozen_at) + DELIVERY_WINDOW_SECONDS,
+            "milestone delivery window elapsed; milestone can be refunded",
+        )
         caller = gl.message.sender_address
         self._require(self._is_party(agreement, caller), "only a party may request milestone evaluation")
 
@@ -2085,7 +2180,7 @@ class SpecLock(gl.Contract):
             overall_finding=overall,
             failure_attribution=attribution,
             status="PROVISIONAL",
-            created_at=u256(self._next_seq()),
+            created_at=u256(_transaction_timestamp()),
         )
         self.evaluations[evaluation_id] = evaluation
         self.evaluation_history.get_or_insert_default(agreement_id).append(evaluation_id)
@@ -2095,22 +2190,37 @@ class SpecLock(gl.Contract):
         return evaluation_id
 
     @gl.public.write
+    def expire_milestone(self, agreement_id: str, milestone_id: str) -> str:
+        """Refund an untouched milestone after the agreement's delivery
+        window. Any caller can trigger this deterministic timeout path."""
+        agreement = self._get_agreement(agreement_id)
+        self._require(agreement.uses_milestones, "agreement does not use milestones")
+        milestone = self._get_milestone(agreement_id, milestone_id)
+        self._require(milestone.phase == MS_PENDING, "only a pending milestone can expire")
+        self._require(_transaction_timestamp() > int(agreement.frozen_at) + DELIVERY_WINDOW_SECONDS,
+                      "milestone delivery window has not elapsed")
+        allocation = int(milestone.allocated_amount)
+        self._settle_milestone(agreement, milestone, released=0, refunded=allocation, retained=0, terminal_phase=MS_REFUNDED)
+        return milestone.settlement_id
+
+    @gl.public.write
     def finalize_milestone(self, agreement_id: str, milestone_id: str) -> bool:
-        """Mutual-consent finalize, scoped to one milestone -- the same
-        pattern as `finalize_verdict`, for the same reason (no trustworthy
-        wall-clock time to decide an appeal/objection window has closed)."""
+        """Finalize early by both parties' consent, or permissionlessly
+        after the transaction-time objection window expires."""
         agreement = self._get_agreement(agreement_id)
         milestone = self._get_milestone(agreement_id, milestone_id)
         self._require(milestone.phase == MS_PROVISIONAL_VERDICT, "nothing to finalize for this milestone in its current phase")
         caller = gl.message.sender_address
-        self._require(self._is_party(agreement, caller), "only a party may consent to finalize a milestone")
-        if caller == agreement.buyer:
-            self._require(not milestone.buyer_ready_to_finalize, "buyer has already consented to finalize this milestone")
-            milestone.buyer_ready_to_finalize = True
-        else:
-            self._require(not milestone.provider_ready_to_finalize, "provider has already consented to finalize this milestone")
-            milestone.provider_ready_to_finalize = True
-        if milestone.buyer_ready_to_finalize and milestone.provider_ready_to_finalize:
+        evaluation = self.evaluations[milestone.latest_evaluation_id]
+        if _transaction_timestamp() <= int(evaluation.created_at) + APPEAL_WINDOW_SECONDS:
+            self._require(self._is_party(agreement, caller), "only a party may consent to finalize a milestone before its deadline")
+            if caller == agreement.buyer:
+                self._require(not milestone.buyer_ready_to_finalize, "buyer has already consented to finalize this milestone")
+                milestone.buyer_ready_to_finalize = True
+            else:
+                self._require(not milestone.provider_ready_to_finalize, "provider has already consented to finalize this milestone")
+                milestone.provider_ready_to_finalize = True
+        if _transaction_timestamp() > int(evaluation.created_at) + APPEAL_WINDOW_SECONDS or (milestone.buyer_ready_to_finalize and milestone.provider_ready_to_finalize):
             milestone.phase = MS_FINALIZED
             self.milestones[milestone_id] = milestone
             return True
@@ -2205,10 +2315,16 @@ class SpecLock(gl.Contract):
             "milestones_defined": a.milestones_defined,
             "warranty_bps": int(a.warranty_bps),
             "warranty_held_amount": int(a.warranty_held_amount),
+            "warranty_deadline_at": int(a.warranty_deadline_at),
             "warranty_status": a.warranty_status,
             "latest_warranty_claim_id": a.latest_warranty_claim_id,
             "buyer_economic_terms_hash": a.buyer_economic_terms_hash,
             "provider_economic_terms_hash": a.provider_economic_terms_hash,
+            "frozen_at": int(a.frozen_at),
+            "delivery_deadline_at": int(a.frozen_at) + DELIVERY_WINDOW_SECONDS if int(a.frozen_at) > 0 else 0,
+            "resubmission_requested_at": int(a.resubmission_requested_at),
+            "resubmission_deadline_at": int(a.resubmission_requested_at) + RESUBMISSION_WINDOW_SECONDS if int(a.resubmission_requested_at) > 0 else 0,
+            "appeal_deadline_at": int(self.evaluations[a.latest_evaluation_id].created_at) + APPEAL_WINDOW_SECONDS if a.latest_evaluation_id else 0,
         }
 
     @gl.public.view
@@ -2232,6 +2348,7 @@ class SpecLock(gl.Contract):
             "retained_amount": int(m.retained_amount),
             "buyer_ready_to_finalize": m.buyer_ready_to_finalize,
             "provider_ready_to_finalize": m.provider_ready_to_finalize,
+            "appeal_deadline_at": int(self.evaluations[m.latest_evaluation_id].created_at) + APPEAL_WINDOW_SECONDS if m.latest_evaluation_id else 0,
         }
 
     @gl.public.view
@@ -2290,6 +2407,8 @@ class SpecLock(gl.Contract):
             "overall_finding": e.overall_finding,
             "failure_attribution": e.failure_attribution,
             "status": e.status,
+            "created_at": int(e.created_at),
+            "appeal_deadline_at": int(e.created_at) + APPEAL_WINDOW_SECONDS,
         }
 
     @gl.public.view

@@ -1,5 +1,11 @@
 # Testing and verification
 
+## Un-deployed review candidate (2026-10-18)
+
+The working-tree candidate source SHA-256 is `CEC00C69E57E6AE1B70C77BE49CFFEEB912F2D55D15E42AF75A2B6687ABB6F5C`. It adds transaction-time deadlines, extended numeric-IP SSRF rejection, fixes deadline enforcement for subsequent evidence in the `SUBMITTED` phase, and clears the stored warranty holdback amount on waiver. These changes are **not** in the deployed source hash/address below and have no live Studionet evidence yet.
+
+Focused retest of #12, #17, #19, #21, and #33: **14 passed**. Full Direct Mode suite: **97 passed**. GenVM `check` and `validate`: passed (3 checks; **47 methods**, 20 views and 27 writes). The Windows console initially failed to encode the linter checkmark under CP1252; rerunning with `$env:PYTHONIOENCODING='utf-8'` passed. The installed CLI does not expose the current documented fee-estimation command; no deployment or further network write was sent because the earlier authorized cumulative cap is not confirmed fee-inclusive.
+
 ## Current source
 
 Contract source SHA-256: `0E7A7723C259DCF1CFAAEC8AFE62F873D6746335D63E9D8A1C2C7B25DFC4A1FE`.
@@ -38,7 +44,7 @@ Verified from a fresh clone of commit `b6fdb8a6e02b93acaa6d2dc942bf04b9edff96df`
 
 Latest candidate deployment: `0x142A372b4cA7cf3784327DFA2e2B0eCF45D4eA14`, chain `61999`, deployment transaction `0x34ee57640f53c1826dc77e5900d66a81bb05f2c59fb899d4f19168b00143329e`, source SHA-256 `0E7A7723C259DCF1CFAAEC8AFE62F873D6746335D63E9D8A1C2C7B25DFC4A1FE`. Deployment finalized with `MAJORITY_AGREE` and leader `SUCCESS`; `genlayer schema` returned 45 methods. Current-source API/agent PASS and FAIL, PARTIAL settlement, warranty claim resolution, real withdrawals, and milestone settlement/replay were executed and read back. See `docs/evidence/studionet-reviewer-fix-2026-10-18.md` and `docs/evidence/studionet-negative-regressions-2026-10-18.json`.
 
-This is representative, not exhaustive. #12, #19, #21, and #33 remain partial; #17 is Direct Mode-verified but its bilateral acknowledgement path was not repeated on-chain. Appeal/procedural-review and non-milestone inconclusive recovery were not repeated against this release. Cumulative gross transfer volume is recorded as 0.017038 GEN before unitemized fees; it is not exact fee-inclusive accounting.
+This is representative, not exhaustive. The deployed release predates the candidate's #12 deadline implementation; #12 and #17 are local-only pending network verification, while #19, #21, and #33 remain partial as detailed in `docs/FEATURE_MATRIX.md`. Appeal/procedural-review and non-milestone inconclusive recovery were not repeated against this release. Cumulative gross transfer volume is recorded as 0.017038 GEN before unitemized fees; it is not exact fee-inclusive accounting.
 
 ## Integration tests
 

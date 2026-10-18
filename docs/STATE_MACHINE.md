@@ -4,7 +4,7 @@
 
 `DRAFT → ACCEPTED → FUNDED → FROZEN → SUBMITTED → EVALUATING(implicit) → PROVISIONAL_VERDICT → (APPEALED → RE_EVALUATING → PROVISIONAL_VERDICT)* → FINALIZED → SETTLED | RECOVERY_PENDING → REFUNDED`
 
-Side branches: `CANCELLED` (from `DRAFT`/`ACCEPTED`, single-party), `EXPIRED` (from `FROZEN`, now gated by **mutual buyer+provider consent** rather than a wall-clock deadline — see the time note in `contracts/speclock.py` and `docs/THREAT_MODEL.md` "clock redesign" — settles as a full refund once both have consented), `RESUBMISSION_REQUESTED` (from `PROVISIONAL_VERDICT`, bounded by `max_resubmissions`).
+Side branches: `CANCELLED` (from `DRAFT`/`ACCEPTED`, single-party), `EXPIRED` (from `FROZEN` or `RESUBMISSION_REQUESTED` after the transaction-time delivery/remediation window; before expiry, funded wind-down requires both parties' consent), and `RESUBMISSION_REQUESTED` (from `PROVISIONAL_VERDICT`, bounded by `max_resubmissions`). GenLayer documents `datetime.now(timezone.utc)` as transaction-pinned and validator-consistent. Deadline changes described here are in the local candidate and are not yet on the deployed release.
 
 Note: there is no separate stored `EVALUATING` phase — `request_evaluation` runs the (nondeterministic) evaluation synchronously within the same call that transitions `SUBMITTED`/`RE_EVALUATING` → `PROVISIONAL_VERDICT`; this is a simplification versus the brief's illustrative phase list, made because GenVM's nondeterministic execution model does not require (or cleanly support, in Direct Mode) a separate pending-evaluation phase with asynchronous completion.
 
@@ -17,17 +17,17 @@ Note: there is no separate stored `EVALUATING` phase — `request_evaluation` ru
 | DRAFT/ACCEPTED | `cancel_or_expire` | either party | phase in {DRAFT,ACCEPTED} | — | CANCELLED |
 | ACCEPTED | `fund_agreement` | buyer | phase==ACCEPTED, amount>0 | `funded_amount` set (bookkeeping, not verified escrow) | FUNDED |
 | FUNDED | `freeze_agreement` | either party | phase==FUNDED; if ambiguity report non-empty, `acknowledge_ambiguity=True` required | `spec_fingerprint`/`criteria_json` now immutable for this agreement | FROZEN |
-| FROZEN | `cancel_or_expire` | buyer, then provider (or vice versa) | each sets their own `*_consents_expire` flag; only the second, distinct caller's consent actually transitions the phase | once both flags are true: auto full refund via `_settle` | EXPIRED |
+| FROZEN | `cancel_or_expire` | any caller after 7 days; otherwise buyer/provider mutual consent | fixed transaction-time delivery deadline | full refund via `_settle` after deadline; mutual wind-down before deadline | EXPIRED |
 | FROZEN/SUBMITTED/RESUBMISSION_REQUESTED | `submit_evidence` | either party | evidence bounds, URL validated | receipt created (`SUBMITTED`); first submission moves FROZEN→SUBMITTED | SUBMITTED |
 | SUBMITTED/RE_EVALUATING | `request_evaluation` | either party | — | evidence frozen, snapshot computed, per-criterion findings derived via consensus; both finalize-consent flags reset | PROVISIONAL_VERDICT |
 | PROVISIONAL_VERDICT | `request_resubmission` | either party | `resubmissions_used < max_resubmissions` | — | RESUBMISSION_REQUESTED |
-| PROVISIONAL_VERDICT | `file_appeal` | either party | `appeal_rounds_used < max_appeal_rounds` (never time-boxed) | appeal filed as `FILED_UNADJUDICATED` | APPEALED |
+| PROVISIONAL_VERDICT | `file_appeal` | either party | within 48-hour transaction-time appeal window and below `max_appeal_rounds` | appeal filed as `FILED_UNADJUDICATED` | APPEALED |
 | APPEALED | `resolve_appeal` | either party | appeal `FILED_UNADJUDICATED` | triggers `request_evaluation` again; resolution compares the *specific challenged criteria's* findings (not just `overall_finding`) between the challenged evaluation and the new one — `UPHELD` if any differ, else `REJECTED` | RE_EVALUATING → PROVISIONAL_VERDICT |
-| PROVISIONAL_VERDICT | `finalize_verdict` | buyer, then provider (or vice versa) | each sets their own `*_ready_to_finalize` flag; only the second, distinct caller's call actually finalizes (returns `True`; the first call returns `False`) | evaluation marked FINAL, reputation updated | FINALIZED |
+| PROVISIONAL_VERDICT | `finalize_verdict` | either party before deadline; any caller after | before the 48-hour deadline both parties must consent; after it finalization is permissionless | evaluation marked FINAL, reputation updated | FINALIZED |
 | FINALIZED | `settle` | either party | `settlement_id==""` | deterministic payout split from `overall_finding`; `UNVERIFIABLE` retains funds instead of awarding either party | SETTLED or RECOVERY_PENDING |
 | RECOVERY_PENDING | `recover_inconclusive` | either party | — | full refund to buyer | REFUNDED |
 
-Neither `finalize_verdict` nor the FROZEN branch of `cancel_or_expire` can be forced by a single party acting alone — both require two separate, distinct-sender transactions. There is no wall-clock deadline anywhere in this contract; see `docs/THREAT_MODEL.md` "clock redesign" for why that design was rejected and replaced.
+Before their deadlines, `finalize_verdict` and the FROZEN branch of `cancel_or_expire` require distinct buyer/provider consent. After deadlines, the candidate permits permissionless progress. The currently deployed release predates these deadline changes.
 
 `TERMINAL_PHASES = {SETTLED, CANCELLED, EXPIRED, REFUNDED}`; `is_consumable()` returns False for all of these. `is_final()` additionally includes `FINALIZED`.
 

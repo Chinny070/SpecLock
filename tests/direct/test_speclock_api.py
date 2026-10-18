@@ -185,6 +185,17 @@ def test_evidence_url_private_ip_ranges_and_boundary_cases_rejected(direct_vm, d
         "https://169.254.169.254/latest/meta-data/",  # cloud metadata SSRF target
         "https://10.0.0.5/health",
         "https://192.168.1.1/health",
+        "https://100.64.0.1/health",  # shared-address space is not globally routable
+        "https://203.0.113.8/health",  # documentation-only TEST-NET range
+        # Legacy inet_aton forms that ordinary HTTP stacks normalize to
+        # loopback/private destinations.
+        "https://2130706433/health",
+        "https://0x7f000001/health",
+        "https://0177.0.0.1/health",
+        "https://127.1/health",
+        "https://10.1/health",
+        "https://api.localhost/health",
+        "https://service.internal/health",
     ]:
         with direct_vm.expect_revert():
             contract.submit_evidence(agreement_id, blocked_url, digest, "{}")
@@ -196,6 +207,32 @@ def test_evidence_url_private_ip_ranges_and_boundary_cases_rejected(direct_vm, d
     ]:
         with direct_vm.expect_revert():
             contract.submit_evidence(agreement_id, malformed_url, digest, "{}")
+
+
+def test_deadline_finalization_is_transaction_time_based(direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie):
+    from datetime import datetime, timezone
+
+    contract = direct_deploy(CONTRACT)
+    direct_vm.warp("2026-01-01T00:00:00+00:00")
+    agreement_id = _setup_frozen_agreement(contract, direct_vm, direct_alice, direct_bob)
+    _submit_evidence(contract, direct_vm, direct_bob, agreement_id, "https://api.example.com/health")
+    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": json.dumps({"status": "ok"})})
+    evaluation_id = contract.request_evaluation(agreement_id)
+    evaluation = contract.get_evaluation(evaluation_id)
+    assert evaluation["appeal_deadline_at"] == evaluation["created_at"] + 48 * 60 * 60
+
+    # A party can consent early; after the pinned transaction-time deadline,
+    # a third party can finalize without choosing or supplying a timestamp.
+    direct_vm.sender = direct_alice
+    assert contract.finalize_verdict(agreement_id) is False
+    deadline = datetime.fromtimestamp(evaluation["appeal_deadline_at"], timezone.utc)
+    direct_vm.warp(deadline.isoformat())
+    direct_vm.sender = direct_charlie
+    with direct_vm.expect_revert():
+        contract.finalize_verdict(agreement_id)  # deadline is inclusive; third party cannot finalize yet
+    direct_vm.warp(datetime.fromtimestamp(evaluation["appeal_deadline_at"] + 1, timezone.utc).isoformat())
+    assert contract.finalize_verdict(agreement_id) is True
+    assert contract.get_agreement(agreement_id)["phase"] == "FINALIZED"
 
 
 def test_evidence_url_and_metadata_size_caps_enforced(direct_vm, direct_deploy, direct_alice, direct_bob):
