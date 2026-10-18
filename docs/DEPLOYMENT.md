@@ -18,17 +18,15 @@ milestone economics require both parties to accept the current fingerprint befor
 aggregate views are guarded; replay checks account for recovery; and withdrawal documentation limits guarantees if
 the EVM child transfer fails after claimable state is cleared.
 
-Corrected-release live evidence is currently limited to the malformed payable-funding regression:
+The malformed payable-funding regression is one corrected-release check:
 `0x25eda7e6f64c0286d74ea2496e4b4725d5e964e1d2c80ac88d711cf3bd01a53b` finalized with `MAJORITY_AGREE` and leader
 `execution_result: SUCCESS`, returned `false`, and credited exactly `5,000,000,000,000` atto to the caller's
 claimable refund. The agreement remained `ACCEPTED` with `funded_amount: 0`. Its preceding creation and acceptance
 transactions (`0x9469131a65430fbf8d55a8499ae66e34e42c07c4d7f2f08a8786fcbab2febda8` and
 `0xf9d060ebb4b7c30af0551bc7036c98ece27ebec048141f4d882a391517fbccb9`) also finalized successfully. The next
-`eth_getTransactionByHash` RPC request timed out at the transport layer. No later transaction was submitted; no live
-API/agent, warranty, milestone, hostile-evidence, or payout scenario is claimed for this release. The signer was
-generated in-process and not persisted; the 0.000005 GEN refund remains claimable by that disposable address, so the
-probe value is stranded absent its ephemeral signer. Fees were not logged separately, so cumulative spend including
-fees is not asserted here.
+`eth_getTransactionByHash` RPC request timed out at the transport layer during that probe. Subsequent corrected-source
+API, agent, warranty, milestone, payout, and recovery scenarios are recorded in
+[`docs/evidence/studionet-corrected-release-2026-10-18.md`](evidence/studionet-corrected-release-2026-10-18.md).
 
 The immediately preceding deployment `0xfC82591f5144ca4aaad7d541bcC615b5AeD29be3` (tx
 `0x481ce5149362128e697f8b81bab6509561280abd6b3c5c9eb8f97845efc44ead`) is superseded. Its source SHA was
@@ -38,9 +36,12 @@ payable call there finalized with execution `ERROR` after the SDK encoded an int
 claimable refund. This is stranded value on the superseded deployment, not evidence about the corrected release. The
 process-local signer is gone; no recovery is claimed.
 
-## Status: corrected source deployed; corrected-source live verification is incomplete
+## Status: corrected source deployed; representative corrected-source lifecycles verified
 
-The current source is deployed at `0xCEE0430CcC760f1Dce94d2E416CbeCe2b1CB8c79`; only the malformed-payable guard has been live-tested on that exact source. Historical evidence below belongs to prior source revisions. The corrected source has 89 passing Direct Mode tests and passes GenVM lint/schema validation. See "Corrected reviewer-fix release" above.
+The current source is deployed at `0xCEE0430CcC760f1Dce94d2E416CbeCe2b1CB8c79`; representative API/agent, warranty,
+milestone, withdrawal, and recovery scenarios are live-tested there as recorded above and in the evidence ledger.
+Historical evidence below belongs to prior source revisions. The corrected source has 89 passing Direct Mode tests and
+passes GenVM lint/schema validation. These recordings do not prove every capability or remove the disclosed limits.
 
 ## Historical release: rejected-value refunds and warranty digest binding
 
@@ -354,4 +355,4 @@ All remain live on-chain (nothing can be un-deployed).
 
 ## Source/commit record
 
-The latest deployment is `0xe52Faa4e49AF53F3f1bD7fef274D324483784e44`. It carries the prior mechanisms (mutual-consent clock design, appeal precision, real native escrow and withdrawal, resubmission fund-lock fix, SSRF protection, partial-payment scoring, bounded procedural review, challenged-criterion re-evaluation, and settlement replay), plus payable-rejection refunds and strict warranty evidence-digest validation. Earlier deployments provide separately documented live evidence for functions not re-exercised on every release. The exact contract source deployed here passed GenVM lint/schema validation and 82/82 Direct Mode tests. Treat a later source modification as a new release requiring updated deployment evidence; individual sections identify which address was used for each historical demonstration.
+The latest deployment is `0xCEE0430CcC760f1Dce94d2E416CbeCe2b1CB8c79` (source SHA-256 `AFCDF4D9841F5F170644586A564DB4740961280654E0545F6B6C2C65E8C8734D`). It carries the prior mechanisms plus the reviewer fixes listed above. Its 45-method schema passed GenVM lint and validation; 89/89 Direct Mode tests pass. Representative corrected-source network scenarios are itemized in `docs/evidence/studionet-corrected-release-2026-10-18.md`; earlier deployments provide separately labeled evidence for mechanisms not repeated on this release. Treat later contract source changes as a new release requiring updated deployment evidence.

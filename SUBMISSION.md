@@ -31,18 +31,22 @@ See `docs/PROTOCOL.md`: freelance/API escrow, AI-agent task marketplaces, and gr
 Receipt: `FINALIZED`, `MAJORITY_AGREE`, leader `execution_result: SUCCESS`; callable 45-method schema. Exact source
 SHA-256: `AFCDF4D9841F5F170644586A564DB4740961280654E0545F6B6C2C65E8C8734D`.
 
-The corrected release passed the live malformed-payable funding regression:
+The corrected release passed the malformed-payable funding regression:
 `0x25eda7e6f64c0286d74ea2496e4b4725d5e964e1d2c80ac88d711cf3bd01a53b` finalized with `MAJORITY_AGREE` and
-`execution_result: SUCCESS`, returned `false`, and credited the attached `5,000,000,000,000` atto to claimable
-refund accounting. It did not fund the agreement. Studionet RPC calls then timed out before other lifecycle writes.
-Accordingly, the new API expectations, strict evaluation digest check, warranty anti-redirection, bilateral economic
-consent, milestone changes, appeal evidence, and payout scenarios in this source have Direct Mode evidence but are
-**not yet live-verified on this corrected deployment**. Details and stranded-probe accounting are in
-`docs/DEPLOYMENT.md`.
+`execution_result: SUCCESS`, returned `false`, and credited the attached `5,000,000,000,000` atto to claimable refund
+accounting without funding the agreement. After a transient RPC timeout on that first probe, follow-up runs on this
+same source verified API PASS/FAIL, AI-agent PASS/FAIL, actual escrow settlement and beneficiary withdrawals, warranty
+evidence anti-redirection and claim resolution, milestone bilateral consent/evaluation/settlement, and the
+`UNVERIFIABLE` → `RECOVERY_PENDING` → `recover_inconclusive` → `REFUNDED` lifecycle. Recovery-aware replay returned
+`matches_recorded_settlement:true` and `recovery_applied:true`. Exact transaction hashes, findings, wallet deltas,
+incomplete probes, and the spending record are in
+[`docs/evidence/studionet-corrected-release-2026-10-18.md`](docs/evidence/studionet-corrected-release-2026-10-18.md).
 
 The 34/38 count and evidence in the historical sections below apply to prior source releases, not this corrected
-source. The corrected release is **not submission-ready yet**: the changed behaviors still require a successful live
-run, and documented clock/liveness and independent-source limitations remain.
+source. Those live runs now verify representative corrected-source behavior, but four capabilities remain partial
+(#12, #19, #21, #33), two earlier milestone probes stranded 0.0001 GEN in unsettled agreements, and exact
+fee-inclusive cumulative expenditure was not captured. Submission readiness therefore remains conditional on a
+reviewer accepting the documented limits and unresolved test-fund accounting; this is not a 38/38-complete claim.
 
 **Historical release (superseded):** contract `0xe52Faa4e49AF53F3f1bD7fef274D324483784e44`, chain id `61999`, deployment transaction `0x9934adb4b7300a641fa082aa2940d9137445f463310c51c897405cbdeb7aa583` — `FINALIZED`, `MAJORITY_AGREE`, leader `execution_result: SUCCESS`; its callable schema had 43 methods. Its rejected-payable refund and warranty digest paths were exercised live, as recorded in `docs/DEPLOYMENT.md`. This evidence is for that earlier source only.
 
@@ -51,7 +55,7 @@ At that historical release, the matrix marked 34 of 38 numbered capabilities `IM
 
 A first payable-deposit / `emit_transfer`-payout escrow design was implemented and deployed for live testing (`0xaa54c150B128843e5638cF31e2F1B632117ccBE2`). **Deposits genuinely worked**: a disposable test wallet's real balance dropped by exactly the amount sent. **Payouts did not**: the transfer to a plain wallet (EOA) recipient reached `FINALIZED` with `result_name:"NO_MAJORITY"` and a leader-receipt result that decodes to `"Contract ... not found"`.
 
-**This was then root-caused and fixed, not merely documented as a limitation.** `gl.get_contract_at(address)` addresses another GenLayer *intelligent contract* — it is the wrong primitive for paying a plain wallet, and its failure there is correct, expected behavior. The fix, `gl.evm.contract_interface` (an EVM-layer proxy, `_EthAccount` in `contracts/speclock.py`), was independently live-verified. `fund_agreement`/`file_appeal` are payable; settlement credits pull-payment balances; `withdraw()` pays them through `_EthAccount`. Historical escrow coverage was 52/52 tests; the latest source now passes 82/82, and the latest-release section records the rejected-payable refund behavior.
+**This was then root-caused and fixed, not merely documented as a limitation.** `gl.get_contract_at(address)` addresses another GenLayer *intelligent contract* — it is the wrong primitive for paying a plain wallet, and its failure there is correct, expected behavior. The fix, `gl.evm.contract_interface` (an EVM-layer proxy, `_EthAccount` in `contracts/speclock.py`), was independently live-verified. `fund_agreement`/`file_appeal` are payable; settlement credits pull-payment balances; `withdraw()` pays them through `_EthAccount`. Historical escrow coverage was 52/52 tests; the corrected current source passes 89/89, and its latest-release section records real deposits, settlement and withdrawals.
 
 **Two redeploy attempts to verify this for SpecLock itself initially looked blocked, then turned out to be a CLI invocation mistake, not a platform or contract issue.** Both fresh deployments reached `status_name: "FINALIZED"` with real 5-validator consensus — which a first pass mistook for success — but their leader receipts actually carried `execution_result: "ERROR"`, decoding to `TypeError: SpecLock.__init__() takes 1 positional argument but 2 were given`. Comparing raw deploy calldata byte-for-byte against the working deployment found the cause: the deploy command used `--args '[]'`, and the CLI's variadic `--args` flag passed that single-quoted shell token through as one literal string constructor argument, not an empty array. Corrected by omitting `--args` entirely (matching AgentCourt's own documented working invocation), redeployed to `0xbE2a98135e41B4fE722919b87024D867F8De8343` (`FINALIZED`, `execution_result: "SUCCESS"`, confirmed via a working `genlayer schema` readback).
 
@@ -59,7 +63,10 @@ A first payable-deposit / `emit_transfer`-payout escrow design was implemented a
 
 ## Funds
 
-**Historically live-custodied and verified on earlier deployments.** This evidence does not establish that the corrected reviewer-fix source's affected payout paths have been network-verified. See the release-specific evidence section above and `docs/DEPLOYMENT.md`.
+**Live-custodied and verified on the corrected deployment.** Real payable funding, release/refund accounting, warranty
+holdback, pull-credit withdrawals, exact recipient balance changes, and duplicate/unauthorized withdrawal rejections
+were exercised. Two incomplete milestone probes remain unsettled as disclosed in the evidence ledger; those records
+are not counted as successful lifecycle outcomes.
 
 ## Capability audit: all 38 numbered brief items, two passes
 
@@ -76,7 +83,7 @@ A first payable-deposit / `emit_transfer`-payout escrow design was implemented a
 - **#35 — documented as the same mechanism as #14, not a distinct feature**, so the capability count is not misread as more distinct functionality than actually exists.
 - **#30 and #33 were implemented in a later pass** (commit `85d4f96`): milestones and warranty holdbacks have Direct Mode coverage and real Studionet lifecycle evidence. The latest `0xe52F…` release additionally verifies rejected-payable refunds and strict warranty digest binding. #33 remains `PARTIAL` only because the runtime has no trustworthy clock for a finite claim window; see the current matrix and deployment ledger.
 
-That earlier second audit deployment (`0xc758…`) finalized successfully. At that point the suite had 66 tests and 33 numbered capabilities were marked verified; the later milestone/warranty and payable-refund revisions are documented in the latest-release section above and in `docs/DEPLOYMENT.md`. The current suite result is 82/82; the current feature count is 34 verified and 4 partial.
+That earlier second audit deployment (`0xc758…`) finalized successfully. The current corrected source has 89 Direct Mode tests; the matrix has 34 capabilities marked verified and 4 partial. Corrected-source representative live cases, including the most recent milestone and recovery runs, are recorded in the deployment evidence ledger.
 
 ## Clean-clone verification (Gate D)
 
@@ -88,7 +95,7 @@ A full `git log --all -p` scan of this repository's history found one real expos
 
 ## Resolved this pass
 
-**`recover_inconclusive` is now live-verified.** Agreement `"6"` (on the predecessor deployment used for the four earlier lifecycle runs) remains stuck in `RECOVERY_PENDING` since its disposable keys live only in the process that generated them, the same pattern hit earlier with another agreement `"3"` on an even older deployment. Rather than leave the capability itself unverified live, a fresh one-shot agreement was created on the **final** deployment specifically to reach `recover_inconclusive` in one process: it produced a genuine `UNVERIFIABLE`, `settle()` moved it to `RECOVERY_PENDING`, and `recover_inconclusive` was called and completed the refund — confirmed by reading back `get_agreement`/`get_settlement` afterward (`phase:"REFUNDED"`, `refunded_to_buyer:1000`). Full evidence in `docs/DEPLOYMENT.md`.
+**`recover_inconclusive` and recovery-aware replay are live-verified on the corrected deployment.** Agreement `11` on `0xCEE0430CcC760f1Dce94d2E416CbeCe2b1CB8c79` produced a genuine `UNVERIFIABLE` from a live HTTP 503 source, entered `RECOVERY_PENDING` after settlement, and was successfully refunded by `recover_inconclusive`. Readback showed `phase:"REFUNDED"`; replay returned `matches_recorded_settlement:true`, `recovery_applied:true`, and the exact 50,000,000,000,000-atto refund. The buyer then withdrew the full amount with a matching wallet balance increase. The older agreement `6` remains stranded on its predecessor deployment; full current evidence is in the ledger.
 
 ## Remaining limitations and risks
 
@@ -97,8 +104,8 @@ A full `git log --all -p` scan of this repository's history found one real expos
 3. **#21 adversarial delivery is partial.** SSRF and malformed-input cases are tested, including a live IPv6 SSRF rejection, but an external client cannot force malicious validator behavior to test consensus rejection end to end.
 4. **#33 warranty is partial.** Holdback, bond, fresh-fetch digest checking, settlement and withdrawal are live-verified; no trustworthy clock can bound the claim period, and warranties do not compose with milestones.
 5. **A `withdraw()` child transfer failure after `claimable` is zeroed has no on-chain callback to restore the credit.** The observed EVM child transfers finalized with `NO_MAJORITY` but `value_credited:true` and exact recipient balances, so this is a residual failure-mode risk, not an observed lost payout (`docs/SECURITY.md`).
-6. **A small testnet amount is stranded.** On the latest release, 0.000001 GEN remains claimable to `0x3d3ee88E2396A41EBA703dea5681Ad60Cc1C9D80` after a client script exited before withdrawal; its ephemeral signer is gone. Earlier deployments also have documented small stranded amounts. No account secret was stored or exposed.
+6. **Small testnet amounts are stranded.** The corrected deployment has two incomplete milestone probes (agreements `8` and `9`) with a combined 0.0001 GEN funded and unsettled, plus 0.00001 GEN claimable to an ephemeral buyer on agreement `6`; those process-local signers were not persisted. Earlier deployments also have documented small stranded amounts. These are not represented as completed lifecycle evidence and no account secret was stored or exposed.
 7. **A disposable test-keystore password remains in historical Git.** It is redacted from current files but cannot be removed without rewriting history; do not reuse that test account. No private key or seed phrase was committed (`docs/SECURITY.md`).
 ## Submission verdict
 
-**Submission readiness: not yet full or unconditional.** Current source passes 82/82 Direct Mode tests and GenVM lint/schema validation (43 methods), and deployment `0xe52F…` is finalized with successful execution. The evidence demonstrates the API and agent PASS/FAIL/UNVERIFIABLE paths, recovery, escrow deposits and withdrawals, appeals, milestones, partial payments, procedural review, challenged-criterion re-evaluation, settlement replay, rejected-payable refunds, and stale-warranty-digest rejection. Four numbered capabilities (#12, #19, #21, #33) remain partial. The withdrawal failure-mode, stranded test amount, and historical test-password exposure also warrant reviewer attention. The estimated cumulative test transfer principal is 0.002913 GEN, within the 0.02 GEN authorization and 0.001 GEN per-transfer cap; fees were not separately itemized. The clean-clone report refers to an earlier commit and must be rerun against the final commit before claiming current Gate D. See the full 38-row matrix and transaction evidence; SpecLock is not represented as 38/38 complete.
+**Submission readiness: substantial verification is complete, but not unconditional.** The current corrected source passes 89/89 Direct Mode tests and GenVM lint/schema validation (45 methods); deployment `0xCEE0430CcC760f1Dce94d2E416CbeCe2b1CB8c79` finalized successfully and has real API/agent PASS/FAIL, escrow payout, warranty anti-redirection/claim resolution, milestone, and recovery-aware replay evidence. Four capabilities (#12, #19, #21, #33) remain partial. The EVM payout callback limitation, 0.00011 GEN of stranded/unsettled value on this deployment, and historical test-password exposure warrant reviewer attention. Recorded cumulative test transfer principal is 0.00898 GEN; fees were not itemized, so this is not a fee-inclusive total. The clean-clone report must be rerun against the documentation commit before Gate D is current. SpecLock is not claimed 38/38 complete or unconditionally submission-ready.

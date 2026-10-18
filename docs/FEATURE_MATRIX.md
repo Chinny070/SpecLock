@@ -8,19 +8,18 @@ The historical row evidence below was gathered against earlier source releases. 
 SHA-256 `AFCDF4D9841F5F170644586A564DB4740961280654E0545F6B6C2C65E8C8734D`, deployed at
 `0xCEE0430CcC760f1Dce94d2E416CbeCe2b1CB8c79` (deployment tx
 `0xc4f1be49ed4f0af80e12e6abc4d2b16f5d3e9acc2bf26c8a4ed2c20146148312`). It has 45 callable methods and successful
-deployment execution. Only the malformed-payable guard/refund behavior has been exercised live on this exact source
-so far (`0x25eda7e6f64c0286d74ea2496e4b4725d5e964e1d2c80ac88d711cf3bd01a53b`, finalized, `MAJORITY_AGREE`,
-`SUCCESS`, returned `false`, exact 5,000,000,000,000-atto claimable refund). Studionet RPC then timed out. Thus prior
-live evidence for native deposits/withdrawals, API/agent checks, warranty, appeals, and milestones is historical and
-must not be represented as verification of this corrected source. The affected rows' historical capability status
-describes implemented behavior; their current-release network-verification status is pending. The clock-based
-deadline limitation (#12), provenance limitation (#19), and finite warranty-window limitation (#33) remain.
+deployment execution. The malformed-payable guard/refund behavior was first exercised live
+(`0x25eda7e6f64c0286d74ea2496e4b4725d5e964e1d2c80ac88d711cf3bd01a53b`, finalized, `MAJORITY_AGREE`, `SUCCESS`,
+exact 5,000,000,000,000-atto claimable refund). Subsequent corrected-source runs verified API and agent PASS/FAIL,
+payable settlement and withdrawal, hostile warranty evidence rejection and valid claim resolution, milestone consent,
+evaluation, settlement and withdrawal, plus recovery-aware replay. Full transaction evidence is in
+`docs/evidence/studionet-corrected-release-2026-10-18.md`. The clock-based deadline limitation (#12), provenance
+limitation (#19), validator-adversary limitation (#21), and finite warranty-window limitation (#33) remain.
 
-Current corrected-release status of reviewer-targeted changes: #3 funding guard live-verified only; #4 API expected
-status/fields local tests only; #5 and #7 integrity/consistency changes local tests only; #18 insufficiency gating
-local tests only; #25/#26 appeal/review changes local tests only; #29 payout and bond paths not re-verified; #30
-economic consent, phase gating, summary, and replay checks local tests only; #33 warranty evidence binding and
-consent local tests only. See the corresponding test references in the rows and `docs/DEPLOYMENT.md`.
+Corrected-source API semantics, digest enforcement, warranty anti-redirection, bilateral economic consent, milestone
+phase gating and views, payout accounting, and recovery-aware replay have both Direct Mode tests and representative
+live evidence. Appeal/procedural-review rounds have historical release-specific live evidence; they were not repeated
+on this corrected deployment. See individual rows and the transaction ledger.
 
 Each row below answers, in order: (1) implementation completeness, (2) the contract method(s), (3) the Direct Mode test(s), (4) whether and how it was verified on Studio Network, (5) what — if anything — remains before `IMPLEMENTED_VERIFIED` would apply.
 
@@ -64,6 +63,23 @@ Each row below answers, in order: (1) implementation completeness, (2) the contr
 | 36 | Immutable evaluation-policy version binding | **IMPLEMENTED_VERIFIED** | `policy_id`/`policy_version` folded into `spec_fingerprint`, `get_policy_fingerprint` view | `test_create_accept_freeze_flow` | `get_policy_fingerprint` read back live against a real agreement, returning a real fingerprint value | — |
 | 37 | Deterministic/intelligent hybrid evaluation | **IMPLEMENTED_VERIFIED** | Core architecture — see `docs/PROTOCOL.md` | All tests | Demonstrated by every other live-verified evaluation in this project: deterministic code (authorization, lifecycle, settlement math) and nondeterministic validator-adjudicated code (web/LLM judgment) working together on real consensus-finalized transactions | — |
 | 38 | Reproducible deterministic replay and auditable intelligent evaluation lineage | **IMPLEMENTED_VERIFIED (strongest honestly supported form)** | A new on-chain view, `verify_settlement_replay(agreement_id)`, added this pass: recomputes a settlement's released/refunded/retained amounts from the recorded evaluation via the exact same `_compute_settlement_amounts` function `settle()` itself calls (extracted so the two can never silently drift), and reports whether the recomputation matches what was actually recorded — callable by anyone, not just the parties. **This is explicitly NOT exact historical execution replay**: it never re-runs the original live web fetch or LLM judgment, and cannot (a changed live source is genuinely non-replayable — see `docs/THREAT_MODEL.md`). It IS a genuine, checkable, on-chain proof that a recorded settlement deterministically follows from its recorded evaluation, not a one-time claim trusted at face value. | `test_verify_settlement_replay_confirms_real_settlement_matches_recorded_evaluation`, `test_verify_settlement_replay_rejects_unsettled_agreement`, `test_deterministic_replay_of_settlement_math` (the original off-chain math check) | **Live-verified**: `verify_settlement_replay` called against a real settled Studio Network agreement returned `matches_recorded_settlement: true` with the recomputed amounts exactly matching the real recorded settlement — `docs/DEPLOYMENT.md`. | The honest, permanent limit is exact execution replay of the original nondeterministic observation — not attempted because it is not possible once a live source changes, not because it was skipped. |
+
+## Corrected-release network evidence supplement
+
+The table's older transaction descriptions are retained as historical evidence; the following current-release evidence
+supplements and supersedes their network-verification cells for the tested methods. All actions were on source SHA
+`AFCDF4D9841F5F170644586A564DB4740961280654E0545F6B6C2C65E8C8734D`, contract
+`0xCEE0430CcC760f1Dce94d2E416CbeCe2b1CB8c79`, chain `61999`. Exact hashes and outcomes are in
+`docs/evidence/studionet-corrected-release-2026-10-18.md`.
+
+| Capabilities | Corrected-release live evidence | Still not proven by this run |
+|---|---|---|
+| #3, #29 | API PASS and FAIL settlement; agent PASS and FAIL settlement; warranty holdback/bond resolution; withdrawals credited matching beneficiary balance deltas; unauthorized, empty-claimable, and duplicate withdrawals rejected. | EVM child transfer callback cannot restore claimable after a hypothetical failed child payout. Appeal/procedural-review rounds were not repeated on this deployment. |
+| #4, #5, #18 | Real API response yielded PASS for expected fields, FAIL for mismatched fields, and UNVERIFIABLE for live HTTP 503; agent profile yielded PASS and FAIL using fetched robots.txt. | #19 source independence and #21 malicious-validator consensus rejection remain partial for their separate reasons. |
+| #7 | Correctly digested submitted content and evidence snapshot fed the live evaluations; hostile warranty evidence with a correct digest but unrelated URL/subject was rejected without moving the holdback. | This does not establish immutable historical access to an external source. |
+| #30 | Agreement `10`: bilateral economic acceptance required before freeze; pre-consent freeze and pre-freeze evaluation rejected; milestone PASS finalized by both parties, settled, summarized complete, replay matched, provider withdrew exact allocation. | Appeals, resubmission, and cancellation remain unsupported for milestone agreements. |
+| #33 | Agreement `7`: unrelated but correctly hashed evidence could not open a claim or redirect funds; original-service claim was re-evaluated and rejected; held value and bonds were withdrawn to the correct beneficiaries. | No trustworthy clock for a finite claim deadline; warranties do not compose with milestones. |
+| #38 | Agreement `10` milestone replay and agreement `11` recovery replay both matched stored settlement math; recovery replay reported `recovery_applied:true`. | Exact replay of past web/LLM execution remains unsupported. |
 
 ## Summary
 
