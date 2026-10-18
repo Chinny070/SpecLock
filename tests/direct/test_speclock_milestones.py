@@ -348,3 +348,64 @@ def test_milestone_partial_settlement_excludes_pass_with_insufficient_evidence(d
     milestone = contract.get_milestone(milestone_id)
     assert milestone["released_amount"] == 500
     assert milestone["refunded_amount"] == 500
+
+
+def test_milestone_expiry_evaluates_relevant_evidence_and_refunds_only_empty_milestone(direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie):
+    from datetime import datetime, timezone
+
+    direct_vm.warp("2026-01-01T00:00:00+00:00")
+    contract = direct_deploy(CONTRACT)
+    agreement_id = _funded_two_criteria_agreement(contract, direct_vm, direct_alice, direct_bob)
+    direct_vm.sender = direct_alice
+    ms1, ms2 = contract.define_milestones(agreement_id, [
+        {"criteria_ids": ["c1"], "amount": 600},
+        {"criteria_ids": ["c2"], "amount": 400},
+    ])
+    direct_vm.sender = direct_bob
+    contract.accept_economic_terms(agreement_id)
+    direct_vm.sender = direct_alice
+    contract.freeze_agreement(agreement_id, False)
+    direct_vm.sender = direct_bob
+    body = json.dumps({"version": "1.0"})
+    contract.submit_evidence(agreement_id, "https://api.example.com/version", hashlib.sha256(body.encode()).hexdigest(), json.dumps({"criterion_id": "c2"}))
+    deadline = contract.get_agreement(agreement_id)["delivery_deadline_at"]
+    direct_vm.warp(datetime.fromtimestamp(deadline + 1, timezone.utc).isoformat())
+    direct_vm.mock_web(".*api\\.example\\.com/version.*", {"status": 200, "body": body})
+    direct_vm.sender = direct_charlie
+
+    # c1 has no relevant evidence and only its 600 allocation is refunded.
+    contract.expire_milestone(agreement_id, ms1)
+    first = contract.get_milestone(ms1)
+    assert first["phase"] == "MS_REFUNDED"
+    assert first["refunded_amount"] == 600
+    assert first["released_amount"] == 0
+
+    # c2's timely evidence requires the normal evaluation process even though
+    # expiry is permissionless and the overall delivery window has elapsed.
+    evaluation_id = contract.expire_milestone(agreement_id, ms2)
+    second = contract.get_milestone(ms2)
+    assert second["phase"] == "MS_PROVISIONAL_VERDICT"
+    assert second["latest_evaluation_id"] == evaluation_id
+    assert contract.get_evaluation(evaluation_id)["overall_finding"] == "PASS"
+    assert second["settlement_id"] == ""
+    summary = contract.get_milestone_summary(agreement_id)
+    assert summary["released_amount"] + summary["refunded_amount"] == 600
+    assert summary["pending_count"] == 1
+
+
+def test_milestone_overdue_evaluation_rejects_unrelated_caller_before_deadline(direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie):
+    contract = direct_deploy(CONTRACT)
+    agreement_id = _funded_two_criteria_agreement(contract, direct_vm, direct_alice, direct_bob)
+    direct_vm.sender = direct_alice
+    [milestone_id] = contract.define_milestones(agreement_id, [{"criteria_ids": ["c1", "c2"], "amount": 1000}])
+    direct_vm.sender = direct_bob
+    contract.accept_economic_terms(agreement_id)
+    direct_vm.sender = direct_alice
+    contract.freeze_agreement(agreement_id, False)
+    direct_vm.sender = direct_bob
+    body = json.dumps({"status": "ok"})
+    contract.submit_evidence(agreement_id, "https://api.example.com/health", hashlib.sha256(body.encode()).hexdigest(), json.dumps({"criterion_id": "c1"}))
+    direct_vm.sender = direct_charlie
+    with direct_vm.expect_revert():
+        contract.request_milestone_evaluation(agreement_id, milestone_id)
+    assert contract.get_milestone(milestone_id)["phase"] == "MS_PENDING"

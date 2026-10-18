@@ -2,14 +2,15 @@
 
 A single, standalone GenLayer Intelligent Contract for universal digital-delivery agreement and adjudication. One canonical contract (`contracts/speclock.py`), two fully-implemented evaluation profiles, no marketplace frontend/database/off-chain adjudicator.
 
-**Status: current release deployed and callable; lifecycle checks against this release are pending.** Contract [`0xDFb69c1890F72c7b791A938ed36C5103582E6F19`](https://genlayer-explorer.vercel.app/address/0xDFb69c1890F72c7b791A938ed36C5103582E6F19) is on Studionet chain `61999`; deployment tx `0x47a258b79297644bce2d54ba8eea678177b27856181577b685d9d3adfbfc35c3` finalized with leader `SUCCESS`. Its deployed source matches SHA-256 `CEC00C69E57E6AE1B70C77BE49CFFEEB912F2D55D15E42AF75A2B6687ABB6F5C`. The release passes 97 Direct Mode tests and GenVM lint/schema validation (47 methods). No lifecycle writes have yet been verified against this address. Two authorized CLI signers are now available, including a funded provider account, but the current CLI write interface lacks payable-value support and its string-argument parser corrupts digit-only agreement IDs; the supported SDK requires a wallet signer/provider not exposed by those CLI aliases. #12 is deployed but behavior-unverified, #17 is implemented but not live-verified, and #19, #21, #33 remain partial. This is not yet claimed submission-ready.
+**Status: deadline-security fix implemented and locally verified; redeployment and live deadline proof are pending.** The last deployment is [`0xDFb69c1890F72c7b791A938ed36C5103582E6F19`](https://genlayer-explorer.vercel.app/address/0xDFb69c1890F72c7b791A938ed36C5103582E6F19) on Studionet chain `61999` (deployment tx `0x47a258b79297644bce2d54ba8eea678177b27856181577b685d9d3adfbfc35c3`; deployed source SHA-256 `CEC00C69E57E6AE1B70C77BE49CFFEEB912F2D55D15E42AF75A2B6687ABB6F5C`). That deployment predates the deadline correction below. The candidate now routes timely evidence submitted before expiry into permissionless validator-backed evaluation, lets post-deadline callers trigger evaluation, preserves no-evidence refunds and prior evaluated verdicts, handles milestone evidence per milestone, and enforces the separate resubmission deadline. The complete Direct Mode suite passes **103 tests** and both GenVM lint/schema checks pass. Do not treat the existing deployment as containing this fix or claim submission readiness until the candidate is clean-clone verified, deployed, and the required live behavior is proven.
 
 ## Quickstart
 
 ```bash
 pip install genlayer-test genvm-linter
 genvm-lint check contracts/speclock.py
-gltest tests/direct/ -v
+genvm-lint validate contracts/speclock.py
+pytest -q tests/direct --tb=short
 ```
 
 ## Trust boundary (short version — full detail in `docs/THREAT_MODEL.md` and `docs/PROTOCOL.md`)
@@ -17,8 +18,7 @@ gltest tests/direct/ -v
 - **Deterministic contract code** owns authorization, lifecycle, bounds, the specification compiler, and settlement math.
 - **Validator-adjudicated (nondeterministic) code** only answers "what does the evidence show for this one frozen criterion" — every leader judgment is independently re-derived and compared by validators via `gl.vm.run_nondet_unsafe`, never trusted on the leader's say-so alone (see `docs/CONSENSUS.md`).
 - **Native-value escrow — live-verified.** `fund_agreement`/`file_appeal` are payable; `_settle`/`resolve_appeal` credit caller-owned pull balances and `withdraw()` pays them through `gl.evm.contract_interface`. Real deposits, settlement payouts, appeal bonds, rejected-value refunds, double-withdrawal rejection, and no-balance rejection have live evidence. Parent withdrawals finalized successfully; EVM child receipts report `NO_MAJORITY` while `value_credited:true`, so the transfer credit and recipient balance—not the child result label alone—are the payout evidence. Latest evidence and residual risks are in `docs/DEPLOYMENT.md` and `docs/SECURITY.md`.
-- **Deadline enforcement is a safety/liveness trade-off, stated plainly.** Mutual two-party consent (no caller-supplied time anywhere) fully closes the manipulation hole that a prior caller-supplied-timestamp design could not. It does not, and cannot, guarantee an agreement always resolves: a silent counterparty after appeals are exhausted can stall it permanently, with no unilateral escape. This was found and honestly reclassified during a capability audit rather than left as an over-claimed status — see `docs/THREAT_MODEL.md` "The honest cost of this design."
-- **No wall-clock time is used anywhere.** The installed runner exposes no usable on-chain timestamp (see `docs/GENLAYER_CAPABILITIES.md`). An earlier caller-supplied-timestamp design was audited, found manipulable by a self-interested party, and replaced: `finalize_verdict` and the FROZEN branch of `cancel_or_expire` now require both buyer and provider to separately consent — neither can be forced by one party alone (`docs/THREAT_MODEL.md` "clock redesign").
+- **Deadline security:** Contract deadlines use the GenVM transaction-pinned time returned by `datetime.now(timezone.utc)`; callers do not supply the clock. After delivery expiry, no submitted evidence means refund, while timely evidence must pass through validator-backed evaluation before payment is decided. Evaluated evidence follows the existing appeal/finality/settlement path. Early cancellation remains bilateral. The current Studionet deployment predates this correction; see `docs/TESTING.md` and `docs/DEPLOYMENT.md` for the verification state.
 
 ## Two evaluation profiles
 

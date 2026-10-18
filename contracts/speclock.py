@@ -373,6 +373,7 @@ class Agreement:
     created_at: u256  # logical sequence number (see _next_seq), NOT wall-clock time
     frozen_at: u256  # GenVM transaction timestamp (Unix seconds)
     resubmission_requested_at: u256  # GenVM transaction timestamp (Unix seconds)
+    resubmission_evidence_start: u256  # evidence-index length when latest resubmission was requested
     buyer_ready_to_finalize: bool
     provider_ready_to_finalize: bool
     buyer_consents_expire: bool
@@ -750,6 +751,7 @@ class SpecLock(gl.Contract):
             created_at=now,
             frozen_at=u256(0),
             resubmission_requested_at=u256(0),
+            resubmission_evidence_start=u256(0),
             buyer_ready_to_finalize=False,
             provider_ready_to_finalize=False,
             buyer_consents_expire=False,
@@ -973,7 +975,8 @@ class SpecLock(gl.Contract):
         """Cancel before funding, or refund an agreement whose trusted
         transaction-time delivery/resubmission window elapsed. Before the
         applicable deadline, a funded wind-down still requires both parties'
-        consent; after it, either party or a third party may trigger refund."""
+        consent. After it, timely submitted evidence is routed through
+        validator-backed evaluation; only a no-evidence timeout refunds."""
         agreement = self._get_agreement(agreement_id)
         self._require(agreement.phase not in TERMINAL_PHASES, "agreement already terminal")
         caller = gl.message.sender_address
@@ -996,6 +999,38 @@ class SpecLock(gl.Contract):
             else int(agreement.resubmission_requested_at) + RESUBMISSION_WINDOW_SECONDS
         )
         if now > deadline:
+            # A resubmission request temporarily supersedes the prior
+            # provisional verdict. If no replacement evidence arrived, put
+            # that already-evaluated verdict back through its ordinary
+            # finality/settlement path; do not reinterpret silence as a new
+            # delivery failure. If replacement evidence did arrive, it was
+            # accepted only within the resubmission deadline, so evaluate it
+            # permissionlessly before any payment decision.
+            if (
+                agreement.phase == PHASE_RESUBMISSION_REQUESTED
+                or (agreement.phase == PHASE_SUBMITTED and int(agreement.resubmissions_used) > 0)
+            ):
+                receipt_count = len(self.evidence_index[agreement_id])
+                has_resubmission_evidence = receipt_count > int(agreement.resubmission_evidence_start)
+                if not has_resubmission_evidence and agreement.latest_evaluation_id:
+                    agreement.phase = PHASE_PROVISIONAL_VERDICT
+                    agreement.buyer_ready_to_finalize = False
+                    agreement.provider_ready_to_finalize = False
+                    self.agreements[agreement_id] = agreement
+                    return
+                if has_resubmission_evidence:
+                    self._request_evaluation_impl(
+                        agreement_id, restrict_to_ids=None, carry_forward_findings=None,
+                    )
+                    return
+            elif agreement.phase == PHASE_SUBMITTED and len(self.evidence_index[agreement_id]) > 0:
+                # Evidence submission is deadline-gated. Any receipt here is
+                # therefore timely, even when this permissionless evaluation
+                # is requested long after the deadline.
+                self._request_evaluation_impl(
+                    agreement_id, restrict_to_ids=None, carry_forward_findings=None,
+                )
+                return
             agreement.phase = PHASE_EXPIRED
             if int(agreement.funded_amount) > 0:
                 self._settle(agreement, released=0, refunded=int(agreement.funded_amount), retained=0, terminal_phase=PHASE_EXPIRED)
@@ -1026,8 +1061,13 @@ class SpecLock(gl.Contract):
         self._require(agreement.phase in (PHASE_FROZEN, PHASE_SUBMITTED, PHASE_RESUBMISSION_REQUESTED, PHASE_APPEALED), "evidence not acceptable in this phase")
         now = _transaction_timestamp()
         if agreement.phase in (PHASE_FROZEN, PHASE_SUBMITTED):
-            self._require(now <= int(agreement.frozen_at) + DELIVERY_WINDOW_SECONDS,
-                          "delivery window elapsed; agreement can be refunded")
+            deadline = (
+                int(agreement.resubmission_requested_at) + RESUBMISSION_WINDOW_SECONDS
+                if int(agreement.resubmissions_used) > 0
+                else int(agreement.frozen_at) + DELIVERY_WINDOW_SECONDS
+            )
+            self._require(now <= deadline,
+                          "applicable delivery window elapsed; late evidence is rejected")
         elif agreement.phase == PHASE_RESUBMISSION_REQUESTED:
             self._require(now <= int(agreement.resubmission_requested_at) + RESUBMISSION_WINDOW_SECONDS,
                           "resubmission window elapsed; agreement can be refunded")
@@ -1081,6 +1121,21 @@ class SpecLock(gl.Contract):
             if rec.status != "REJECTED":
                 parts.append(f"{rid}:{rec.content_digest}")
         return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
+
+    def _evidence_for_criteria(self, agreement_id: str, criterion_ids: set) -> list:
+        """Return submitted/frozen receipts tagged to at least one target
+        criterion. Evidence submission itself enforces the applicable
+        transaction-time deadline, so a stored receipt is proof that the
+        submitter met that deadline; its logical sequence is deliberately
+        not mistaken for a timestamp."""
+        receipts = []
+        for receipt_id in self.evidence_index[agreement_id]:
+            receipt = self.evidence[receipt_id]
+            if receipt.status not in ("SUBMITTED", "FROZEN"):
+                continue
+            if _criterion_id_from_metadata(receipt.metadata_json) in criterion_ids:
+                receipts.append(receipt)
+        return receipts
 
     def _warranty_claim_criterion(self, agreement: Agreement, evidence_url: str, metadata_json: str) -> str:
         """Accept only the exact subject in the accepted evaluation binding."""
@@ -1140,19 +1195,20 @@ class SpecLock(gl.Contract):
             "evaluation can only be requested after submission or during re-evaluation",
         )
         caller = gl.message.sender_address
-        self._require(self._is_party(agreement, caller), "only a party may request evaluation")
         now = _transaction_timestamp()
-        if agreement.phase == PHASE_SUBMITTED:
-            if int(agreement.resubmissions_used) > 0:
-                self._require(
-                    now <= int(agreement.resubmission_requested_at) + RESUBMISSION_WINDOW_SECONDS,
-                    "resubmission window elapsed; agreement can be refunded",
-                )
-            else:
-                self._require(
-                    now <= int(agreement.frozen_at) + DELIVERY_WINDOW_SECONDS,
-                    "delivery window elapsed; agreement can be refunded",
-                )
+        deadline = (
+            int(agreement.resubmission_requested_at) + RESUBMISSION_WINDOW_SECONDS
+            if int(agreement.resubmissions_used) > 0
+            else int(agreement.frozen_at) + DELIVERY_WINDOW_SECONDS
+        )
+        is_overdue = now > deadline
+        if not is_overdue:
+            self._require(self._is_party(agreement, caller), "only a party may request evaluation before the deadline")
+        # An overdue caller may request evaluation permissionlessly.
+        # Receipts could only have been created while submit_evidence
+        # enforced the applicable deadline, so elapsed time cannot turn
+        # timely evidence into an automatic refund.
+        self._require(len(self.evidence_index[agreement_id]) > 0, "evaluation requires submitted evidence")
 
         self._freeze_all_evidence(agreement_id)
         snapshot = self._evidence_snapshot_commitment(agreement_id)
@@ -1736,6 +1792,7 @@ class SpecLock(gl.Contract):
         agreement.resubmissions_used = u256(int(agreement.resubmissions_used) + 1)
         agreement.phase = PHASE_RESUBMISSION_REQUESTED
         agreement.resubmission_requested_at = u256(_transaction_timestamp())
+        agreement.resubmission_evidence_start = u256(len(self.evidence_index[agreement_id]))
         self.agreements[agreement_id] = agreement
 
     # ---------------------------------------------------------------
@@ -2134,6 +2191,9 @@ class SpecLock(gl.Contract):
 
     @gl.public.write
     def request_milestone_evaluation(self, agreement_id: str, milestone_id: str) -> str:
+        return self._request_milestone_evaluation_impl(agreement_id, milestone_id, permissionless_overdue=False)
+
+    def _request_milestone_evaluation_impl(self, agreement_id: str, milestone_id: str, permissionless_overdue: bool) -> str:
         agreement = self._get_agreement(agreement_id)
         self._require(agreement.uses_milestones, "agreement does not use milestones")
         self._require(
@@ -2142,19 +2202,19 @@ class SpecLock(gl.Contract):
         )
         milestone = self._get_milestone(agreement_id, milestone_id)
         self._require(milestone.phase == MS_PENDING, "milestone evaluation already requested or completed")
-        self._require(
-            _transaction_timestamp() <= int(agreement.frozen_at) + DELIVERY_WINDOW_SECONDS,
-            "milestone delivery window elapsed; milestone can be refunded",
-        )
         caller = gl.message.sender_address
-        self._require(self._is_party(agreement, caller), "only a party may request milestone evaluation")
+        overdue = _transaction_timestamp() > int(agreement.frozen_at) + DELIVERY_WINDOW_SECONDS
+        if not overdue:
+            self._require(self._is_party(agreement, caller), "only a party may request milestone evaluation before the deadline")
+        else:
+            self._require(permissionless_overdue, "milestone evaluation deadline elapsed")
 
         self._freeze_all_evidence(agreement_id)
         snapshot = self._evidence_snapshot_commitment(agreement_id)
         all_criteria = json.loads(agreement.criteria_json)
         milestone_criteria_ids = set(json.loads(milestone.criteria_ids_json))
         criteria = [c for c in all_criteria if c["id"] in milestone_criteria_ids]
-        evidence_recs = [self.evidence[rid] for rid in self.evidence_index[agreement_id] if self.evidence[rid].status == "FROZEN"]
+        evidence_recs = self._evidence_for_criteria(agreement_id, milestone_criteria_ids)
 
         if agreement.profile == PROFILE_API:
             result = self._evaluate_api_profile(criteria, evidence_recs)
@@ -2191,14 +2251,20 @@ class SpecLock(gl.Contract):
 
     @gl.public.write
     def expire_milestone(self, agreement_id: str, milestone_id: str) -> str:
-        """Refund an untouched milestone after the agreement's delivery
-        window. Any caller can trigger this deterministic timeout path."""
+        """After the deadline, evaluate timely milestone evidence
+        permissionlessly. Refund only this milestone when no relevant
+        evidence was submitted."""
         agreement = self._get_agreement(agreement_id)
         self._require(agreement.uses_milestones, "agreement does not use milestones")
         milestone = self._get_milestone(agreement_id, milestone_id)
         self._require(milestone.phase == MS_PENDING, "only a pending milestone can expire")
         self._require(_transaction_timestamp() > int(agreement.frozen_at) + DELIVERY_WINDOW_SECONDS,
                       "milestone delivery window has not elapsed")
+        criterion_ids = set(json.loads(milestone.criteria_ids_json))
+        if self._evidence_for_criteria(agreement_id, criterion_ids):
+            return self._request_milestone_evaluation_impl(
+                agreement_id, milestone_id, permissionless_overdue=True
+            )
         allocation = int(milestone.allocated_amount)
         self._settle_milestone(agreement, milestone, released=0, refunded=allocation, retained=0, terminal_phase=MS_REFUNDED)
         return milestone.settlement_id

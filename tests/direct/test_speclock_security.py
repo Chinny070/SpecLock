@@ -259,6 +259,91 @@ def test_resubmission_full_cycle_reaches_a_new_evaluation(direct_vm, direct_depl
     assert evaluation2["overall_finding"] == "PASS"
 
 
+def test_resubmission_uses_its_own_deadline_through_exact_boundary(direct_vm, direct_deploy, direct_alice, direct_bob):
+    from datetime import datetime, timezone
+
+    direct_vm.warp("2026-01-01T00:00:00+00:00")
+    contract = direct_deploy(CONTRACT)
+    direct_vm.sender = direct_alice
+    agreement_id = contract.create_agreement(
+        direct_bob, "api_delivery", "resubmission clock",
+        [{"id": "c1", "description": "endpoint returns ok", "priority": "required", "evidence_method": "http", "expected_json": {"ok": True}}],
+        1,
+    )
+    direct_vm.sender = direct_bob
+    contract.accept_agreement(agreement_id)
+    direct_vm.sender = direct_alice
+    direct_vm.value = 100
+    contract.fund_agreement(agreement_id, 100)
+    direct_vm.value = 0
+    contract.freeze_agreement(agreement_id, False)
+    frozen = contract.get_agreement(agreement_id)
+    direct_vm.sender = direct_bob
+    _submit_api(contract, agreement_id, "https://api.example.com/first", "bad")
+    direct_vm.mock_web(".*first.*", {"status": 200, "body": "bad"})
+    contract.request_evaluation(agreement_id)
+    direct_vm.sender = direct_alice
+    direct_vm.warp(datetime.fromtimestamp(frozen["delivery_deadline_at"] - 7 * 24 * 60 * 60 + 3600, timezone.utc).isoformat())
+    contract.request_resubmission(agreement_id)
+    state = contract.get_agreement(agreement_id)
+    resubmission_deadline = state["resubmission_deadline_at"]
+    assert resubmission_deadline > frozen["delivery_deadline_at"]
+
+    direct_vm.sender = direct_bob
+    # After the original delivery deadline, a valid resubmission is still
+    # allowed because the separate resubmission window is active.
+    direct_vm.warp(datetime.fromtimestamp(frozen["delivery_deadline_at"] + 1, timezone.utc).isoformat())
+    _submit_api(contract, agreement_id, "https://api.example.com/replacement-1", '{"ok":true}')
+    direct_vm.warp(datetime.fromtimestamp(resubmission_deadline, timezone.utc).isoformat())
+    _submit_api(contract, agreement_id, "https://api.example.com/replacement-2", '{"ok":true}')
+    direct_vm.warp(datetime.fromtimestamp(resubmission_deadline + 1, timezone.utc).isoformat())
+    with direct_vm.expect_revert():
+        _submit_api(contract, agreement_id, "https://api.example.com/late", '{"ok":true}')
+    assert len(contract.list_evidence(agreement_id, 0, 10)) == 3
+
+
+def test_expired_resubmission_without_new_evidence_restores_existing_verdict(direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie):
+    from datetime import datetime, timezone
+
+    direct_vm.warp("2026-01-01T00:00:00+00:00")
+    contract = direct_deploy(CONTRACT)
+    direct_vm.sender = direct_alice
+    agreement_id = contract.create_agreement(
+        direct_bob, "api_delivery", "preserve prior adjudication",
+        [{"id": "c1", "description": "endpoint returns ok", "priority": "required", "evidence_method": "http", "expected_json": {"ok": True}}],
+        1,
+    )
+    direct_vm.sender = direct_bob
+    contract.accept_agreement(agreement_id)
+    direct_vm.sender = direct_alice
+    direct_vm.value = 100
+    contract.fund_agreement(agreement_id, 100)
+    direct_vm.value = 0
+    contract.freeze_agreement(agreement_id, False)
+    direct_vm.sender = direct_bob
+    _submit_api(contract, agreement_id, "https://api.example.com/prior", "bad")
+    direct_vm.mock_web(".*prior.*", {"status": 200, "body": "bad"})
+    old_eval_id = contract.request_evaluation(agreement_id)
+    direct_vm.sender = direct_alice
+    contract.request_resubmission(agreement_id)
+    deadline = contract.get_agreement(agreement_id)["resubmission_deadline_at"]
+    direct_vm.warp(datetime.fromtimestamp(deadline + 1, timezone.utc).isoformat())
+
+    direct_vm.sender = direct_charlie
+    contract.cancel_or_expire(agreement_id)
+    state = contract.get_agreement(agreement_id)
+    assert state["phase"] == "PROVISIONAL_VERDICT"
+    assert state["latest_evaluation_id"] == old_eval_id
+    with direct_vm.expect_revert():
+        contract.get_settlement(agreement_id)
+    assert contract.finalize_verdict(agreement_id) is True
+    contract.settle(agreement_id)
+    settlement = contract.get_settlement(agreement_id)
+    assert settlement["refunded_to_buyer"] == 100
+    assert settlement["released_to_provider"] == 0
+    assert settlement["refunded_to_buyer"] + settlement["released_to_provider"] + settlement["retained"] == 100
+
+
 def test_resubmission_requested_without_a_follow_up_can_still_be_wound_down(direct_vm, direct_deploy, direct_alice, direct_bob):
     """Companion regression test: if request_resubmission is called but
     neither party ever submits new evidence, the agreement must still be

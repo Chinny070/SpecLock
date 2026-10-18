@@ -1,5 +1,13 @@
 # Deployment
 
+## Deadline-security fix candidate (2026-10-18; not deployed yet)
+
+Candidate contract source SHA-256: `5F5204E9BF3941D688ABD0F34A31FCF2C788A29772A1A0237585008D8A54AC7F`. The candidate retains all prior lifecycle, evaluation, evidence-integrity, appeal, warranty, milestone, escrow, withdrawal, and replay behavior while changing only deadline/evidence routing and tracking the evidence-index checkpoint at a resubmission request.
+
+Local verification passed: **103/103 Direct Mode tests**, zero skipped; `genvm-lint check` (3 checks) and `genvm-lint validate` (47 methods, 20 views, 27 writes). The test set preserves the original 97 cases and adds six regressions; the old test that expected an automatic refund despite timely evidence now asserts validator-backed evaluation instead. `docs/TESTING.md` records commands and coverage.
+
+The existing deployment below predates this source. Clean GitHub-clone verification, redeployment, and live lifecycle evidence for a naturally elapsed delivery deadline remain pending. The production window is seven days; no test-only shortening or mocked network run will be presented as live proof.
+
 ## Current release — deployed and representative lifecycle checks completed (2026-10-18)
 
 | Field | Value |

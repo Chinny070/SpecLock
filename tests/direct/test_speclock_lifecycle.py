@@ -203,7 +203,7 @@ def test_unrelated_party_cannot_consent_to_wind_down(direct_vm, direct_deploy, d
         contract.cancel_or_expire(agreement_id)
 
 
-def test_delivery_deadline_permissionlessly_refunds_and_rejects_late_evidence(direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie):
+def test_delivery_deadline_evaluates_timely_evidence_and_rejects_late_evidence(direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie):
     from datetime import datetime, timezone
     import hashlib
     import json
@@ -230,13 +230,80 @@ def test_delivery_deadline_permissionlessly_refunds_and_rejects_late_evidence(di
     with direct_vm.expect_revert():
         contract.submit_evidence(agreement_id, "https://api.example.com/health", hashlib.sha256(b"{}").hexdigest(), json.dumps({"criterion_id": "c1"}))
     assert contract.list_evidence(agreement_id, 0, 10) == receipts_before
-    with direct_vm.expect_revert():
-        contract.request_evaluation(agreement_id)
+    # At the exact deadline, evidence remains admissible. One second later,
+    # late evidence is rejected, but the timely receipts still require a
+    # validator-backed evaluation before any payment can be decided.
+    direct_vm.mock_web(".*api\\.example\\.com/health.*", {"status": 200, "body": "{}"})
     direct_vm.sender = direct_charlie
     contract.cancel_or_expire(agreement_id)
     state = contract.get_agreement(agreement_id)
-    assert state["phase"] == "EXPIRED"
-    assert contract.get_settlement(agreement_id)["refunded_to_buyer"] == 100
+    assert state["phase"] == "PROVISIONAL_VERDICT"
+    evaluation = contract.get_evaluation(state["latest_evaluation_id"])
+    assert evaluation["overall_finding"] == "UNVERIFIABLE"
+    assert evaluation["status"] == "PROVISIONAL"
+    assert state["released_amount"] == 0
+    assert state["refunded_amount"] == 0
+    from genlayer.py.types import Address
+    assert contract.get_claimable(str(Address(bytes(direct_alice)))) == 0
+
+
+def test_no_evidence_expiry_refunds_permissionlessly_and_conserves_funds(direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie):
+    from datetime import datetime, timezone
+
+    contract = direct_deploy(CONTRACT)
+    agreement_id = _create(contract, direct_vm, direct_alice, direct_bob)
+    direct_vm.sender = direct_bob
+    contract.accept_agreement(agreement_id)
+    direct_vm.sender = direct_alice
+    direct_vm.value = 700
+    contract.fund_agreement(agreement_id, 700)
+    direct_vm.value = 0
+    contract.freeze_agreement(agreement_id, False)
+    deadline = contract.get_agreement(agreement_id)["delivery_deadline_at"]
+
+    direct_vm.sender = direct_charlie
+    direct_vm.warp(datetime.fromtimestamp(deadline, timezone.utc).isoformat())
+    with direct_vm.expect_revert():
+        contract.cancel_or_expire(agreement_id)  # expiry boundary is exclusive
+    direct_vm.warp(datetime.fromtimestamp(deadline + 1, timezone.utc).isoformat())
+    contract.cancel_or_expire(agreement_id)
+
+    settlement = contract.get_settlement(agreement_id)
+    assert settlement["released_to_provider"] == 0
+    assert settlement["refunded_to_buyer"] == 700
+    assert settlement["retained"] == 0
+    assert sum(settlement[k] for k in ("released_to_provider", "refunded_to_buyer", "retained")) == 700
+    from genlayer.py.types import Address
+    assert contract.get_claimable(str(Address(bytes(direct_alice)))) == 700
+
+
+def test_permissionless_direct_evaluation_after_deadline_does_not_refund(direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie):
+    from datetime import datetime, timezone
+    import hashlib
+    import json
+
+    contract = direct_deploy(CONTRACT)
+    agreement_id = _create(contract, direct_vm, direct_alice, direct_bob)
+    direct_vm.sender = direct_bob
+    contract.accept_agreement(agreement_id)
+    direct_vm.sender = direct_alice
+    direct_vm.value = 250
+    contract.fund_agreement(agreement_id, 250)
+    direct_vm.value = 0
+    contract.freeze_agreement(agreement_id, False)
+    direct_vm.sender = direct_bob
+    contract.submit_evidence(agreement_id, "https://api.example.com/health", hashlib.sha256(b"{}").hexdigest(), json.dumps({"criterion_id": "c1"}))
+    deadline = contract.get_agreement(agreement_id)["delivery_deadline_at"]
+    direct_vm.warp(datetime.fromtimestamp(deadline + 1, timezone.utc).isoformat())
+    direct_vm.mock_web(".*api\\.example\\.com/health.*", {"status": 200, "body": "{}"})
+
+    direct_vm.sender = direct_charlie
+    evaluation_id = contract.request_evaluation(agreement_id)
+    assert contract.get_evaluation(evaluation_id)["overall_finding"] == "UNVERIFIABLE"
+    assert contract.get_agreement(agreement_id)["phase"] == "PROVISIONAL_VERDICT"
+    from genlayer.py.types import Address
+    assert contract.get_claimable(str(Address(bytes(direct_alice)))) == 0
+    assert contract.get_claimable(str(Address(bytes(direct_bob)))) == 0
 
 
 def test_provider_as_plain_hex_string_address_is_accepted(direct_vm, direct_deploy, direct_alice, direct_bob):
