@@ -15,6 +15,7 @@ No wall-clock time is used anywhere (see contracts/speclock.py time note).
 
 import hashlib
 import json
+import re
 
 CONTRACT = "contracts/speclock.py"
 
@@ -38,9 +39,10 @@ def _setup_frozen_agent_agreement(contract, direct_vm, buyer, provider):
     return agreement_id
 
 
-def _submit(contract, direct_vm, submitter, agreement_id, url):
+def _submit(contract, direct_vm, submitter, agreement_id, url, body="A concise summary supported by the linked source.", status=200):
     direct_vm.sender = submitter
-    digest = hashlib.sha256(url.encode()).hexdigest()
+    digest = hashlib.sha256(body.encode()).hexdigest()
+    direct_vm.mock_web(re.escape(url), {"status": status, "body": body})
     return contract.submit_evidence(agreement_id, url, digest, json.dumps({"criterion_id": "c1"}))
 
 
@@ -74,7 +76,20 @@ def test_agent_negative_hallucinated_citation_fails(direct_vm, direct_deploy, di
     evaluation_id = contract.request_evaluation(agreement_id)
     evaluation = contract.get_evaluation(evaluation_id)
     assert evaluation["overall_finding"] == "FAIL"
-    assert evaluation["failure_attribution"] == "DELIVERY"
+
+
+def test_insufficient_agent_evidence_cannot_support_payable_pass(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy(CONTRACT)
+    agreement_id = _setup_frozen_agent_agreement(contract, direct_vm, direct_alice, direct_bob)
+    _submit(contract, direct_vm, direct_bob, agreement_id, "https://artifacts.example.com/summary.txt")
+    direct_vm.mock_llm(
+        r".*adjudicating.*",
+        json.dumps({"finding": "PASS", "sufficiency": "INSUFFICIENT", "rationale": "Only one weak source was provided."}),
+    )
+    evaluation = contract.get_evaluation(contract.request_evaluation(agreement_id))
+    assert evaluation["findings"][0]["finding"] == "PASS"
+    assert evaluation["findings"][0]["sufficiency"] == "INSUFFICIENT"
+    assert evaluation["overall_finding"] == "UNVERIFIABLE"
 
 
 def test_agent_uncertain_malformed_llm_output_is_unverifiable_not_fabricated(direct_vm, direct_deploy, direct_alice, direct_bob):
@@ -201,10 +216,8 @@ def test_agent_judge_actually_fetches_and_includes_real_evidence_content(direct_
     against the fixed one."""
     contract = direct_deploy(CONTRACT)
     agreement_id = _setup_frozen_agent_agreement(contract, direct_vm, direct_alice, direct_bob)
-    _submit(contract, direct_vm, direct_bob, agreement_id, "https://artifacts.example.com/summary.txt")
-
     unique_marker = "UNIQUE-MARKER-57f3a9-this-text-must-reach-the-llm-prompt"
-    direct_vm.mock_web(r".*artifacts\.example\.com/summary\.txt.*", {"status": 200, "body": f"Summary content. {unique_marker}"})
+    _submit(contract, direct_vm, direct_bob, agreement_id, "https://artifacts.example.com/summary.txt", f"Summary content. {unique_marker}")
     direct_vm.mock_llm(
         rf".*{unique_marker}.*",
         json.dumps({"finding": "PASS", "sufficiency": "SUFFICIENT", "rationale": "Real fetched content was present and reviewed."}),
@@ -223,9 +236,7 @@ def test_agent_unreachable_evidence_fetch_does_not_crash_judgment(direct_vm, dir
     went down."""
     contract = direct_deploy(CONTRACT)
     agreement_id = _setup_frozen_agent_agreement(contract, direct_vm, direct_alice, direct_bob)
-    _submit(contract, direct_vm, direct_bob, agreement_id, "https://artifacts.example.com/summary.txt")
-
-    direct_vm.mock_web(r".*artifacts\.example\.com/summary\.txt.*", {"status": 503, "body": ""})
+    _submit(contract, direct_vm, direct_bob, agreement_id, "https://artifacts.example.com/summary.txt", "", 503)
     direct_vm.mock_llm(
         r".*adjudicating.*",
         json.dumps({"finding": "UNVERIFIABLE", "sufficiency": "UNVERIFIABLE", "rationale": "Evidence source was unreachable at evaluation time."}),

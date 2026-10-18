@@ -26,9 +26,27 @@ See `docs/PROTOCOL.md`: freelance/API escrow, AI-agent task marketplaces, and gr
 
 ## Deployment status
 
-**Latest release deployed and verified on GenLayer Studio Network.** Contract `0xe52Faa4e49AF53F3f1bD7fef274D324483784e44`, chain id `61999`, deployment transaction `0x9934adb4b7300a641fa082aa2940d9137445f463310c51c897405cbdeb7aa583` — `FINALIZED`, `MAJORITY_AGREE`, leader `execution_result: SUCCESS`; its callable schema has 43 methods. This release's rejected-payable refund path and warranty evidence-digest binding were exercised live. An invalid payable funding call returned `false`, credited the exact amount, and a same-process withdrawal cleared it; a stale-digest warranty claim produced `UNVERIFIABLE` and `REJECTED`, after which the provider withdrew the holdback plus bond. Complete hashes, child-transfer details, and the single abandoned 0.000001 GEN probe are in `docs/DEPLOYMENT.md`.
+**Corrected reviewer-fix release:** contract `0xCEE0430CcC760f1Dce94d2E416CbeCe2b1CB8c79`, Studionet chain id
+`61999`, deployment transaction `0xc4f1be49ed4f0af80e12e6abc4d2b16f5d3e9acc2bf26c8a4ed2c20146148312`.
+Receipt: `FINALIZED`, `MAJORITY_AGREE`, leader `execution_result: SUCCESS`; callable 45-method schema. Exact source
+SHA-256: `AFCDF4D9841F5F170644586A564DB4740961280654E0545F6B6C2C65E8C8734D`.
 
-The matrix marks 34 of 38 numbered capabilities `IMPLEMENTED_VERIFIED`; #12, #19, #21 and #33 remain partial for explicit liveness, provenance, validator-testing, and deadline limitations. Historical deployments supply evidence for capabilities not changed in this release. Capability #35 overlaps #14, so 34 numbered verified entries do not represent 34 distinct mechanisms. No claim of 38/38 completion is made.
+The corrected release passed the live malformed-payable funding regression:
+`0x25eda7e6f64c0286d74ea2496e4b4725d5e964e1d2c80ac88d711cf3bd01a53b` finalized with `MAJORITY_AGREE` and
+`execution_result: SUCCESS`, returned `false`, and credited the attached `5,000,000,000,000` atto to claimable
+refund accounting. It did not fund the agreement. Studionet RPC calls then timed out before other lifecycle writes.
+Accordingly, the new API expectations, strict evaluation digest check, warranty anti-redirection, bilateral economic
+consent, milestone changes, appeal evidence, and payout scenarios in this source have Direct Mode evidence but are
+**not yet live-verified on this corrected deployment**. Details and stranded-probe accounting are in
+`docs/DEPLOYMENT.md`.
+
+The 34/38 count and evidence in the historical sections below apply to prior source releases, not this corrected
+source. The corrected release is **not submission-ready yet**: the changed behaviors still require a successful live
+run, and documented clock/liveness and independent-source limitations remain.
+
+**Historical release (superseded):** contract `0xe52Faa4e49AF53F3f1bD7fef274D324483784e44`, chain id `61999`, deployment transaction `0x9934adb4b7300a641fa082aa2940d9137445f463310c51c897405cbdeb7aa583` — `FINALIZED`, `MAJORITY_AGREE`, leader `execution_result: SUCCESS`; its callable schema had 43 methods. Its rejected-payable refund and warranty digest paths were exercised live, as recorded in `docs/DEPLOYMENT.md`. This evidence is for that earlier source only.
+
+At that historical release, the matrix marked 34 of 38 numbered capabilities `IMPLEMENTED_VERIFIED`; #12, #19, #21 and #33 were partial for explicit liveness, provenance, validator-testing, and deadline limitations. Capability #35 overlaps #14, so 34 numbered entries do not represent 34 distinct mechanisms. No claim of 38/38 completion is made.
 ## Native-value escrow: failed, root-caused, fixed, redeployed
 
 A first payable-deposit / `emit_transfer`-payout escrow design was implemented and deployed for live testing (`0xaa54c150B128843e5638cF31e2F1B632117ccBE2`). **Deposits genuinely worked**: a disposable test wallet's real balance dropped by exactly the amount sent. **Payouts did not**: the transfer to a plain wallet (EOA) recipient reached `FINALIZED` with `result_name:"NO_MAJORITY"` and a leader-receipt result that decodes to `"Contract ... not found"`.
@@ -41,7 +59,7 @@ A first payable-deposit / `emit_transfer`-payout escrow design was implemented a
 
 ## Funds
 
-**LIVE-CUSTODIED AND VERIFIED.** The current contract holds and moves real native value: real deposits via payable `fund_agreement`/`file_appeal`, real settlement-driven and appeal-bond-driven crediting, and real `withdraw()` payouts, with every wallet balance delta independently confirmed. See `docs/DEPLOYMENT.md`.
+**Historically live-custodied and verified on earlier deployments.** This evidence does not establish that the corrected reviewer-fix source's affected payout paths have been network-verified. See the release-specific evidence section above and `docs/DEPLOYMENT.md`.
 
 ## Capability audit: all 38 numbered brief items, two passes
 

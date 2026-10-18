@@ -21,8 +21,8 @@ def _funded_two_criteria_agreement(contract, direct_vm, buyer, provider, amount=
     agreement_id = contract.create_agreement(
         provider, "api_delivery", "Deliver two independent endpoints",
         [
-            {"id": "c1", "description": "GET /health returns status ok", "priority": "required", "evidence_method": "http:c1"},
-            {"id": "c2", "description": "GET /version returns version string", "priority": "required", "evidence_method": "http:c2"},
+            {"id": "c1", "description": "GET /health returns status ok", "priority": "required", "evidence_method": "http:c1", "expected_json": {"status": "ok"}},
+            {"id": "c2", "description": "GET /version returns version string", "priority": "required", "evidence_method": "http:c2", "expected_json": {"version": "1.0"}},
         ],
         1,
     )
@@ -74,11 +74,23 @@ def test_define_milestones_only_buyer_and_only_once(direct_vm, direct_deploy, di
     direct_vm.sender = direct_bob
     with direct_vm.expect_revert():
         contract.define_milestones(agreement_id, [{"criteria_ids": ["c1", "c2"], "amount": 1000}])
-
     direct_vm.sender = direct_alice
     contract.define_milestones(agreement_id, [{"criteria_ids": ["c1", "c2"], "amount": 1000}])
     with direct_vm.expect_revert():
         contract.define_milestones(agreement_id, [{"criteria_ids": ["c1", "c2"], "amount": 1000}])
+
+
+def test_milestone_economic_terms_require_bilateral_acceptance(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy(CONTRACT)
+    agreement_id = _funded_two_criteria_agreement(contract, direct_vm, direct_alice, direct_bob)
+    direct_vm.sender = direct_alice
+    contract.define_milestones(agreement_id, [{"criteria_ids": ["c1", "c2"], "amount": 1000}])
+    with direct_vm.expect_revert():
+        contract.freeze_agreement(agreement_id, False)
+    direct_vm.sender = direct_bob
+    assert contract.accept_economic_terms(agreement_id) is True
+    direct_vm.sender = direct_alice
+    contract.freeze_agreement(agreement_id, False)
 
 
 def test_milestones_independent_evaluation_and_settlement_fund_conservation(direct_vm, direct_deploy, direct_alice, direct_bob):
@@ -91,12 +103,19 @@ def test_milestones_independent_evaluation_and_settlement_fund_conservation(dire
         {"criteria_ids": ["c1"], "amount": 600},
         {"criteria_ids": ["c2"], "amount": 400},
     ])
+    assert contract.get_milestone_summary(agreement_id)["all_complete"] is False
+    with direct_vm.expect_revert():
+        contract.request_milestone_evaluation(agreement_id, ms1)
+    direct_vm.sender = direct_bob
+    assert contract.accept_economic_terms(agreement_id) is True
+    direct_vm.sender = direct_alice
     contract.freeze_agreement(agreement_id, False)
 
     direct_vm.sender = direct_bob
-    digest = hashlib.sha256(b"x").hexdigest()
+    body1 = json.dumps({"status": "ok"})
+    digest = hashlib.sha256(body1.encode()).hexdigest()
     contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
-    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": json.dumps({"status": "ok"})})
+    direct_vm.mock_web(r".*api\.example.com/health.*", {"status": 200, "body": body1})
 
     contract.request_milestone_evaluation(agreement_id, ms1)
     assert contract.get_milestone(ms1)["phase"] == "MS_PROVISIONAL_VERDICT"
@@ -122,7 +141,8 @@ def test_milestones_independent_evaluation_and_settlement_fund_conservation(dire
         contract.settle_milestone(agreement_id, ms1)  # double-settle rejected
 
     direct_vm.sender = direct_bob
-    contract.submit_evidence(agreement_id, "https://api.example.com/version", digest, json.dumps({"criterion_id": "c2"}))
+    body2 = "not json"
+    contract.submit_evidence(agreement_id, "https://api.example.com/version", hashlib.sha256(body2.encode()).hexdigest(), json.dumps({"criterion_id": "c2"}))
     direct_vm.mock_web(r".*api\.example\.com/version.*", {"status": 200, "body": "not json"})
     contract.request_milestone_evaluation(agreement_id, ms2)
     direct_vm.sender = direct_alice
@@ -141,6 +161,10 @@ def test_milestones_independent_evaluation_and_settlement_fund_conservation(dire
     total_released = ms1_state["released_amount"] + ms2_state["released_amount"]
     total_refunded = ms1_state["refunded_amount"] + ms2_state["refunded_amount"]
     assert total_released + total_refunded == 1000
+    summary = contract.get_milestone_summary(agreement_id)
+    assert summary["all_complete"] is True
+    assert summary["completed_count"] == 2
+    assert summary["released_amount"] + summary["refunded_amount"] == 1000
 
     from genlayer.py.types import Address
     assert contract.get_claimable(str(Address(bytes(direct_bob)))) == 600  # provider got ms1's release
@@ -155,6 +179,9 @@ def test_milestone_unverifiable_recovers_via_recover_milestone_inconclusive(dire
         {"criteria_ids": ["c1"], "amount": 600},
         {"criteria_ids": ["c2"], "amount": 400},
     ])
+    direct_vm.sender = direct_bob
+    contract.accept_economic_terms(agreement_id)
+    direct_vm.sender = direct_alice
     contract.freeze_agreement(agreement_id, False)
 
     # No evidence submitted for c1 at all -> milestone evaluation derives UNVERIFIABLE.
@@ -186,6 +213,9 @@ def test_milestone_agreement_rejects_top_level_single_evaluation_methods(direct_
     agreement_id = _funded_two_criteria_agreement(contract, direct_vm, direct_alice, direct_bob)
     direct_vm.sender = direct_alice
     contract.define_milestones(agreement_id, [{"criteria_ids": ["c1", "c2"], "amount": 1000}])
+    direct_vm.sender = direct_bob
+    contract.accept_economic_terms(agreement_id)
+    direct_vm.sender = direct_alice
     contract.freeze_agreement(agreement_id, False)
 
     direct_vm.sender = direct_bob

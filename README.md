@@ -2,7 +2,7 @@
 
 A single, standalone GenLayer Intelligent Contract for universal digital-delivery agreement and adjudication. One canonical contract (`contracts/speclock.py`), two fully-implemented evaluation profiles, no marketplace frontend/database/off-chain adjudicator.
 
-**Status: deployed and exercised on GenLayer Studio Network across both evaluation profiles.** The matrix marks 34 of 38 numbered capabilities `IMPLEMENTED_VERIFIED`; four remain `PARTIAL` with explicit limits. Latest contract: `0xe52Faa4e49AF53F3f1bD7fef274D324483784e44` (chain id `61999`), deployment tx `0x9934adb4b7300a641fa082aa2940d9137445f463310c51c897405cbdeb7aa583`, finalized with leader `execution_result: SUCCESS` and callable 43-method schema. This release live-verifies rejected-payable refund crediting and warranty evidence-digest binding. The warranty deadline remains unenforceable without a trustworthy clock. See `SUBMISSION.md`, `docs/FEATURE_MATRIX.md`, and the transaction evidence in `docs/DEPLOYMENT.md`.
+**Status: corrected release deployed; source tests and lint pass; the complete reviewer-requested Studionet lifecycle remains unverified.** Latest contract: `0xCEE0430CcC760f1Dce94d2E416CbeCe2b1CB8c79` (chain id `61999`), deployment tx `0xc4f1be49ed4f0af80e12e6abc4d2b16f5d3e9acc2bf26c8a4ed2c20146148312`, finalized with `MAJORITY_AGREE`, leader `execution_result: SUCCESS`, and callable 45-method schema. A malformed-payable refund regression passed live, but the RPC timed out before the remaining new cases. Historical live evidence does not prove the corrected source's changed behavior. See `SUBMISSION.md`, `docs/FEATURE_MATRIX.md`, and `docs/DEPLOYMENT.md`.
 
 ## Quickstart
 

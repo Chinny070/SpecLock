@@ -12,6 +12,11 @@ import json
 CONTRACT = "contracts/speclock.py"
 
 
+def _submit_api(contract, agreement_id, url, body):
+    digest = hashlib.sha256(body.encode()).hexdigest()
+    return contract.submit_evidence(agreement_id, url, digest, json.dumps({"criterion_id": "c1"}))
+
+
 def test_too_many_criteria_rejected(direct_vm, direct_deploy, direct_alice, direct_bob):
     contract = direct_deploy(CONTRACT)
     direct_vm.sender = direct_alice
@@ -48,7 +53,7 @@ def test_malformed_metadata_json_rejected(direct_vm, direct_deploy, direct_alice
     contract.freeze_agreement(agreement_id, False)
 
     direct_vm.sender = direct_bob
-    digest = hashlib.sha256(b"x").hexdigest()
+    digest = hashlib.sha256(b"").hexdigest()
     with direct_vm.expect_revert():
         contract.submit_evidence(agreement_id, "https://api.example.com/x", digest, "{not json")
 
@@ -92,7 +97,7 @@ def test_evidence_cap_enforced(direct_vm, direct_deploy, direct_alice, direct_bo
     contract.freeze_agreement(agreement_id, False)
 
     direct_vm.sender = direct_bob
-    digest = hashlib.sha256(b"x").hexdigest()
+    digest = hashlib.sha256(b"bad").hexdigest()
     for i in range(64):
         contract.submit_evidence(agreement_id, f"https://api.example.com/{i}", digest, "{}")
     with direct_vm.expect_revert():
@@ -104,7 +109,7 @@ def test_unverifiable_overall_recovers_funds_without_awarding_either_party(direc
     direct_vm.sender = direct_alice
     agreement_id = contract.create_agreement(
         direct_bob, "api_delivery", "spec",
-        [{"id": "c1", "description": "endpoint responds", "priority": "required", "evidence_method": "http:c1"}],
+        [{"id": "c1", "description": "endpoint responds", "priority": "required", "evidence_method": "http:c1", "expected_json": {"ok": True}}],
         1,
     )
     direct_vm.sender = direct_bob
@@ -116,7 +121,7 @@ def test_unverifiable_overall_recovers_funds_without_awarding_either_party(direc
     contract.freeze_agreement(agreement_id, False)
 
     direct_vm.sender = direct_bob
-    digest = hashlib.sha256(b"x").hexdigest()
+    digest = hashlib.sha256(b"bad").hexdigest()
     contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
     direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 503, "body": ""})
     contract.request_evaluation(agreement_id)
@@ -150,7 +155,7 @@ def test_reputation_only_updates_on_finalized_outcome(direct_vm, direct_deploy, 
     direct_vm.sender = direct_alice
     agreement_id = contract.create_agreement(
         direct_bob, "api_delivery", "spec",
-        [{"id": "c1", "description": "endpoint responds", "priority": "required", "evidence_method": "http:c1"}],
+        [{"id": "c1", "description": "endpoint responds", "priority": "required", "evidence_method": "http:c1", "expected_json": {"ok": True}}],
         1,
     )
     direct_vm.sender = direct_bob
@@ -162,8 +167,7 @@ def test_reputation_only_updates_on_finalized_outcome(direct_vm, direct_deploy, 
     contract.freeze_agreement(agreement_id, False)
 
     direct_vm.sender = direct_bob
-    digest = hashlib.sha256(b"x").hexdigest()
-    contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
+    _submit_api(contract, agreement_id, "https://api.example.com/health", json.dumps({"ok": True}))
     direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": json.dumps({"ok": True})})
     contract.request_evaluation(agreement_id)
 
@@ -188,7 +192,7 @@ def test_resubmission_budget_enforced(direct_vm, direct_deploy, direct_alice, di
     direct_vm.sender = direct_alice
     agreement_id = contract.create_agreement(
         direct_bob, "api_delivery", "spec",
-        [{"id": "c1", "description": "endpoint responds", "priority": "required", "evidence_method": "http:c1"}],
+        [{"id": "c1", "description": "endpoint responds", "priority": "required", "evidence_method": "http:c1", "expected_json": {"ok": True}}],
         0,  # max_resubmissions = 0
     )
     direct_vm.sender = direct_bob
@@ -200,8 +204,7 @@ def test_resubmission_budget_enforced(direct_vm, direct_deploy, direct_alice, di
     contract.freeze_agreement(agreement_id, False)
 
     direct_vm.sender = direct_bob
-    digest = hashlib.sha256(b"x").hexdigest()
-    contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
+    _submit_api(contract, agreement_id, "https://api.example.com/health", "bad")
     direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": "bad"})
     contract.request_evaluation(agreement_id)
 
@@ -221,7 +224,7 @@ def test_resubmission_full_cycle_reaches_a_new_evaluation(direct_vm, direct_depl
     direct_vm.sender = direct_alice
     agreement_id = contract.create_agreement(
         direct_bob, "api_delivery", "spec",
-        [{"id": "c1", "description": "endpoint responds", "priority": "required", "evidence_method": "http:c1"}],
+        [{"id": "c1", "description": "endpoint responds", "priority": "required", "evidence_method": "http:c1", "expected_json": {"ok": True}}],
         1,  # max_resubmissions = 1
     )
     direct_vm.sender = direct_bob
@@ -233,7 +236,7 @@ def test_resubmission_full_cycle_reaches_a_new_evaluation(direct_vm, direct_depl
     contract.freeze_agreement(agreement_id, False)
 
     direct_vm.sender = direct_bob
-    digest = hashlib.sha256(b"x").hexdigest()
+    digest = hashlib.sha256(b"bad").hexdigest()
     contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
     direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": "bad"})
     contract.request_evaluation(agreement_id)
@@ -243,7 +246,7 @@ def test_resubmission_full_cycle_reaches_a_new_evaluation(direct_vm, direct_depl
     assert contract.get_agreement(agreement_id)["phase"] == "RESUBMISSION_REQUESTED"
 
     direct_vm.sender = direct_bob
-    contract.submit_evidence(agreement_id, "https://api.example.com/health2", digest, json.dumps({"criterion_id": "c1"}))
+    _submit_api(contract, agreement_id, "https://api.example.com/health2", json.dumps({"ok": True}))
     assert contract.get_agreement(agreement_id)["phase"] == "SUBMITTED"
 
     # Mocks match in first-registered order, and ".*health.*" would also
@@ -265,7 +268,7 @@ def test_resubmission_requested_without_a_follow_up_can_still_be_wound_down(dire
     direct_vm.sender = direct_alice
     agreement_id = contract.create_agreement(
         direct_bob, "api_delivery", "spec",
-        [{"id": "c1", "description": "endpoint responds", "priority": "required", "evidence_method": "http:c1"}],
+        [{"id": "c1", "description": "endpoint responds", "priority": "required", "evidence_method": "http:c1", "expected_json": {"ok": True}}],
         1,
     )
     direct_vm.sender = direct_bob
@@ -277,8 +280,7 @@ def test_resubmission_requested_without_a_follow_up_can_still_be_wound_down(dire
     contract.freeze_agreement(agreement_id, False)
 
     direct_vm.sender = direct_bob
-    digest = hashlib.sha256(b"x").hexdigest()
-    contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
+    _submit_api(contract, agreement_id, "https://api.example.com/health", "bad")
     direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": "bad"})
     contract.request_evaluation(agreement_id)
 
@@ -308,7 +310,7 @@ def test_finalize_consent_cannot_be_forced_by_a_single_malicious_party(direct_vm
     direct_vm.sender = direct_alice
     agreement_id = contract.create_agreement(
         direct_bob, "api_delivery", "spec",
-        [{"id": "c1", "description": "endpoint responds", "priority": "required", "evidence_method": "http:c1"}],
+        [{"id": "c1", "description": "endpoint responds", "priority": "required", "evidence_method": "http:c1", "expected_json": {"ok": True}}],
         1,
     )
     direct_vm.sender = direct_bob
@@ -319,8 +321,7 @@ def test_finalize_consent_cannot_be_forced_by_a_single_malicious_party(direct_vm
     direct_vm.value = 0
     contract.freeze_agreement(agreement_id, False)
     direct_vm.sender = direct_bob
-    digest = hashlib.sha256(b"x").hexdigest()
-    contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
+    _submit_api(contract, agreement_id, "https://api.example.com/health", "bad")
     direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": json.dumps({"ok": True})})
     contract.request_evaluation(agreement_id)
 
@@ -342,7 +343,7 @@ def test_check_verdict_consistency_reports_changed_criteria_across_rounds(direct
     direct_vm.sender = direct_alice
     agreement_id = contract.create_agreement(
         direct_bob, "api_delivery", "spec",
-        [{"id": "c1", "description": "endpoint responds", "priority": "required", "evidence_method": "http:c1"}],
+        [{"id": "c1", "description": "endpoint responds", "priority": "required", "evidence_method": "http:c1", "expected_json": {"ok": True}}],
         1,
     )
     direct_vm.sender = direct_bob
@@ -353,7 +354,7 @@ def test_check_verdict_consistency_reports_changed_criteria_across_rounds(direct
     direct_vm.value = 0
     contract.freeze_agreement(agreement_id, False)
     direct_vm.sender = direct_bob
-    digest = hashlib.sha256(b"x").hexdigest()
+    digest = hashlib.sha256(b"bad").hexdigest()
     contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
     direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": "bad"})
     contract.request_evaluation(agreement_id)
@@ -366,6 +367,7 @@ def test_check_verdict_consistency_reports_changed_criteria_across_rounds(direct
     direct_vm.value = 100
     contract.file_appeal(agreement_id, ["c1"], "disagree")
     direct_vm.value = 0
+    _submit_api(contract, agreement_id, "https://api.example.com/health", json.dumps({"ok": True}))
     direct_vm.clear_mocks()
     direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": json.dumps({"ok": True})})
     contract.resolve_appeal(agreement_id)
@@ -391,7 +393,7 @@ def _setup_funded_api_agreement(contract, direct_vm, buyer, provider, amount=100
     direct_vm.sender = buyer
     agreement_id = contract.create_agreement(
         provider, "api_delivery", "spec",
-        [{"id": "c1", "description": "endpoint responds", "priority": "required", "evidence_method": "http:c1"}],
+        [{"id": "c1", "description": "endpoint responds", "priority": "required", "evidence_method": "http:c1", "expected_json": {"ok": True}}],
         1,
     )
     direct_vm.sender = provider
@@ -409,7 +411,7 @@ def test_fund_agreement_requires_sent_value_to_match_declared_amount(direct_vm, 
     direct_vm.sender = direct_alice
     agreement_id = contract.create_agreement(
         direct_bob, "api_delivery", "spec",
-        [{"id": "c1", "description": "endpoint responds", "priority": "required", "evidence_method": "http:c1"}],
+        [{"id": "c1", "description": "endpoint responds", "priority": "required", "evidence_method": "http:c1", "expected_json": {"ok": True}}],
         1,
     )
     direct_vm.sender = direct_bob
@@ -422,13 +424,21 @@ def test_fund_agreement_requires_sent_value_to_match_declared_amount(direct_vm, 
     from genlayer.py.types import Address
     assert contract.get_claimable(str(Address(bytes(direct_alice)))) == 1
 
+    # Malformed SDK input must take the same safe refund path before any
+    # comparison can raise TypeError after the protocol credits attached GEN.
+    direct_vm.value = 5
+    assert contract.fund_agreement(agreement_id, "1000") is False
+    direct_vm.value = 0
+    assert contract.get_agreement(agreement_id)["funded_amount"] == 0
+    assert contract.get_claimable(str(Address(bytes(direct_alice)))) == 6
+
 
 def test_rejected_funding_value_is_refundable_for_unauthorized_caller(direct_vm, direct_deploy, direct_alice, direct_bob):
     contract = direct_deploy(CONTRACT)
     direct_vm.sender = direct_alice
     agreement_id = contract.create_agreement(
         direct_bob, "api_delivery", "spec",
-        [{"id": "c1", "description": "endpoint responds", "priority": "required", "evidence_method": "http:c1"}],
+        [{"id": "c1", "description": "endpoint responds", "priority": "required", "evidence_method": "http:c1", "expected_json": {"ok": True}}],
         1,
     )
     direct_vm.sender = direct_bob
@@ -447,8 +457,7 @@ def test_settle_on_pass_credits_provider_claimable_not_buyer(direct_vm, direct_d
     from genlayer.py.types import Address
     agreement_id = _setup_funded_api_agreement(contract, direct_vm, direct_alice, direct_bob, amount=1000)
     direct_vm.sender = direct_bob
-    digest = hashlib.sha256(b"x").hexdigest()
-    contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
+    _submit_api(contract, agreement_id, "https://api.example.com/health", json.dumps({"ok": True}))
     direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": json.dumps({"ok": True})})
     contract.request_evaluation(agreement_id)
     direct_vm.sender = direct_alice
@@ -466,8 +475,7 @@ def test_withdraw_zeroes_claimable_and_returns_amount(direct_vm, direct_deploy, 
     from genlayer.py.types import Address
     agreement_id = _setup_funded_api_agreement(contract, direct_vm, direct_alice, direct_bob, amount=1000)
     direct_vm.sender = direct_bob
-    digest = hashlib.sha256(b"x").hexdigest()
-    contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
+    _submit_api(contract, agreement_id, "https://api.example.com/health", json.dumps({"ok": True}))
     direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": json.dumps({"ok": True})})
     contract.request_evaluation(agreement_id)
     direct_vm.sender = direct_alice
@@ -496,7 +504,7 @@ def test_recover_inconclusive_credits_buyer_claimable(direct_vm, direct_deploy, 
     from genlayer.py.types import Address
     agreement_id = _setup_funded_api_agreement(contract, direct_vm, direct_alice, direct_bob, amount=500)
     direct_vm.sender = direct_bob
-    digest = hashlib.sha256(b"x").hexdigest()
+    digest = hashlib.sha256(b"bad").hexdigest()
     contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
     direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 503, "body": ""})
     contract.request_evaluation(agreement_id)
@@ -517,7 +525,7 @@ def test_appeal_requires_exact_bond_value(direct_vm, direct_deploy, direct_alice
     contract = direct_deploy(CONTRACT)
     agreement_id = _setup_funded_api_agreement(contract, direct_vm, direct_alice, direct_bob, amount=1000)
     direct_vm.sender = direct_bob
-    digest = hashlib.sha256(b"x").hexdigest()
+    digest = hashlib.sha256(b"bad").hexdigest()
     contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
     direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": "bad"})
     contract.request_evaluation(agreement_id)
@@ -536,7 +544,7 @@ def test_appeal_bond_credited_to_appellant_on_upheld(direct_vm, direct_deploy, d
     from genlayer.py.types import Address
     agreement_id = _setup_funded_api_agreement(contract, direct_vm, direct_alice, direct_bob, amount=1000)
     direct_vm.sender = direct_bob
-    digest = hashlib.sha256(b"x").hexdigest()
+    digest = hashlib.sha256(b"bad").hexdigest()
     contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
     direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": "bad"})
     contract.request_evaluation(agreement_id)
@@ -559,7 +567,7 @@ def test_appeal_bond_credited_to_other_party_on_rejected(direct_vm, direct_deplo
     from genlayer.py.types import Address
     agreement_id = _setup_funded_api_agreement(contract, direct_vm, direct_alice, direct_bob, amount=1000)
     direct_vm.sender = direct_bob
-    digest = hashlib.sha256(b"x").hexdigest()
+    digest = hashlib.sha256(b"bad").hexdigest()
     contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
     direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": "bad"})
     contract.request_evaluation(agreement_id)
@@ -588,7 +596,7 @@ def test_appeal_bond_credited_to_other_party_on_rejected(direct_vm, direct_deplo
 def _exhaust_appeal_rounds(contract, direct_vm, buyer, provider, agreement_id):
     """Drives an agreement through both of its default max_appeal_rounds (2)
     so request_procedural_review becomes available."""
-    digest = hashlib.sha256(b"x").hexdigest()
+    digest = hashlib.sha256(b"bad").hexdigest()
     direct_vm.sender = provider
     contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
     direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": "bad"})
@@ -610,7 +618,7 @@ def test_procedural_review_unavailable_before_appeal_rounds_exhausted(direct_vm,
     contract = direct_deploy(CONTRACT)
     agreement_id = _setup_funded_api_agreement(contract, direct_vm, direct_alice, direct_bob, amount=1000)
     direct_vm.sender = direct_bob
-    digest = hashlib.sha256(b"x").hexdigest()
+    digest = hashlib.sha256(b"bad").hexdigest()
     contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
     direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": "bad"})
     contract.request_evaluation(agreement_id)
@@ -637,7 +645,7 @@ def test_procedural_review_requires_both_parties_mutual_consent(direct_vm, direc
 
     direct_vm.sender = direct_bob
     direct_vm.clear_mocks()
-    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": json.dumps({"ok": True})})
+    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": "bad"})
     second = contract.request_procedural_review(agreement_id)
     assert second is True
 
@@ -645,7 +653,7 @@ def test_procedural_review_requires_both_parties_mutual_consent(direct_vm, direc
     assert agreement["procedural_review_used"] is True
     assert agreement["phase"] == "PROVISIONAL_VERDICT"  # the triggered re-evaluation produced a fresh verdict
     evaluation = contract.get_evaluation(agreement["latest_evaluation_id"])
-    assert evaluation["overall_finding"] == "PASS"  # genuinely re-evaluated against the now-fixed evidence
+    assert evaluation["overall_finding"] == "FAIL"  # re-evaluation remains bound to the unchanged committed evidence
 
 
 def test_procedural_review_usable_exactly_once(direct_vm, direct_deploy, direct_alice, direct_bob):

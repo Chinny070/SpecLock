@@ -8,7 +8,7 @@ def _funded_agreement(contract, direct_vm, buyer, provider, amount=1000):
     direct_vm.sender = buyer
     agreement_id = contract.create_agreement(
         provider, "api_delivery", "Deliver GET /health",
-        [{"id": "c1", "description": "GET /health returns status ok", "priority": "required", "evidence_method": "http:c1"}],
+        [{"id": "c1", "description": "GET /health returns status ok", "priority": "required", "evidence_method": "http:c1", "expected_json": {"status": "ok"}}],
         1,
     )
     direct_vm.sender = provider
@@ -25,12 +25,16 @@ def test_warranty_pass_then_claim_upheld(direct_vm, direct_deploy, direct_alice,
     agreement_id = _funded_agreement(contract, direct_vm, direct_alice, direct_bob, amount=1000)
     direct_vm.sender = direct_alice
     contract.enable_warranty(agreement_id, 2000)  # 20% holdback
+    direct_vm.sender = direct_bob
+    contract.accept_economic_terms(agreement_id)
+    direct_vm.sender = direct_alice
     contract.freeze_agreement(agreement_id, False)
 
     direct_vm.sender = direct_bob
-    digest = hashlib.sha256(b"x").hexdigest()
+    initial_body = json.dumps({"status": "ok"})
+    digest = hashlib.sha256(initial_body.encode()).hexdigest()
     contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
-    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": json.dumps({"status": "ok"})})
+    direct_vm.mock_web(r".*api\.example.com/health.*", {"status": 200, "body": initial_body})
     contract.request_evaluation(agreement_id)
 
     direct_vm.sender = direct_alice
@@ -46,13 +50,14 @@ def test_warranty_pass_then_claim_upheld(direct_vm, direct_deploy, direct_alice,
 
     direct_vm.sender = direct_alice
     direct_vm.value = 20  # bond = max(1, 200//10)
+    failed_body = json.dumps({"status": "error"})
     claim_id = contract.file_warranty_claim(
         agreement_id, "endpoint broke after delivery",
-        "https://api.example.com/health2", hashlib.sha256(b"error").hexdigest(), json.dumps({"criterion_id": "c1"}),
+        "https://api.example.com/health", hashlib.sha256(failed_body.encode()).hexdigest(), json.dumps({"criterion_id": "c1"}),
     )
     direct_vm.value = 0
     direct_vm.clear_mocks()
-    direct_vm.mock_web(r".*api\.example\.com/health2.*", {"status": 200, "body": "error"})
+    direct_vm.mock_web(r".*api\.example.com/health.*", {"status": 200, "body": failed_body})
     contract.resolve_warranty_claim(agreement_id)
 
     claim = contract.get_warranty_claim(claim_id)
@@ -70,7 +75,7 @@ def test_warranty_pass_then_claim_upheld(direct_vm, direct_deploy, direct_alice,
     # GenVM behavior where `value_credited` can remain true after rollback.
     direct_vm.value = 20
     assert contract.file_warranty_claim(
-        agreement_id, "duplicate", "https://api.example.com/health2", digest,
+        agreement_id, "duplicate", "https://api.example.com/health", digest,
         json.dumps({"criterion_id": "c1"}),
     ) == ""
     direct_vm.value = 0
@@ -83,12 +88,16 @@ def test_warranty_claim_rejected_releases_to_provider(direct_vm, direct_deploy, 
     agreement_id = _funded_agreement(contract, direct_vm, direct_alice, direct_bob, amount=1000)
     direct_vm.sender = direct_alice
     contract.enable_warranty(agreement_id, 2000)
+    direct_vm.sender = direct_bob
+    contract.accept_economic_terms(agreement_id)
+    direct_vm.sender = direct_alice
     contract.freeze_agreement(agreement_id, False)
 
     direct_vm.sender = direct_bob
-    digest = hashlib.sha256(b"x").hexdigest()
+    valid_body = json.dumps({"status": "ok"})
+    digest = hashlib.sha256(valid_body.encode()).hexdigest()
     contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
-    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": json.dumps({"status": "ok"})})
+    direct_vm.mock_web(r".*api\.example.com/health.*", {"status": 200, "body": valid_body})
     contract.request_evaluation(agreement_id)
     direct_vm.sender = direct_alice
     contract.finalize_verdict(agreement_id)
@@ -98,13 +107,12 @@ def test_warranty_claim_rejected_releases_to_provider(direct_vm, direct_deploy, 
 
     direct_vm.sender = direct_alice
     direct_vm.value = 20
-    valid_body = json.dumps({"status": "ok"})
     claim_id = contract.file_warranty_claim(
-        agreement_id, "still broken", "https://api.example.com/health3", hashlib.sha256(valid_body.encode()).hexdigest(), json.dumps({"criterion_id": "c1"}),
+        agreement_id, "still broken", "https://api.example.com/health", hashlib.sha256(valid_body.encode()).hexdigest(), json.dumps({"criterion_id": "c1"}),
     )
     direct_vm.value = 0
     direct_vm.clear_mocks()
-    direct_vm.mock_web(r".*api\.example\.com/health3.*", {"status": 200, "body": valid_body})
+    direct_vm.mock_web(r".*api\.example.com/health.*", {"status": 200, "body": valid_body})
     contract.resolve_warranty_claim(agreement_id)
 
     claim = contract.get_warranty_claim(claim_id)
@@ -122,11 +130,15 @@ def test_stale_warranty_evidence_digest_does_not_uphold_claim(direct_vm, direct_
     agreement_id = _funded_agreement(contract, direct_vm, direct_alice, direct_bob, amount=1000)
     direct_vm.sender = direct_alice
     contract.enable_warranty(agreement_id, 2000)
+    direct_vm.sender = direct_bob
+    contract.accept_economic_terms(agreement_id)
+    direct_vm.sender = direct_alice
     contract.freeze_agreement(agreement_id, False)
     direct_vm.sender = direct_bob
-    digest = hashlib.sha256(b"initial").hexdigest()
+    initial_body = json.dumps({"status": "ok"})
+    digest = hashlib.sha256(initial_body.encode()).hexdigest()
     contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
-    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": json.dumps({"status": "ok"})})
+    direct_vm.mock_web(r".*api\.example.com/health.*", {"status": 200, "body": initial_body})
     contract.request_evaluation(agreement_id)
     direct_vm.sender = direct_alice
     contract.finalize_verdict(agreement_id)
@@ -137,12 +149,12 @@ def test_stale_warranty_evidence_digest_does_not_uphold_claim(direct_vm, direct_
     direct_vm.sender = direct_alice
     direct_vm.value = 20
     claim_id = contract.file_warranty_claim(
-        agreement_id, "test a changed response", "https://api.example.com/changed",
+        agreement_id, "test a changed response", "https://api.example.com/health",
         hashlib.sha256(b"old response").hexdigest(), json.dumps({"criterion_id": "c1"}),
     )
     direct_vm.value = 0
     direct_vm.clear_mocks()
-    direct_vm.mock_web(r".*api\.example\.com/changed.*", {"status": 200, "body": "not json"})
+    direct_vm.mock_web(r".*api\.example.com/health.*", {"status": 200, "body": "not json"})
     contract.resolve_warranty_claim(agreement_id)
 
     claim = contract.get_warranty_claim(claim_id)
@@ -158,12 +170,16 @@ def test_warranty_waive_releases_to_provider(direct_vm, direct_deploy, direct_al
     agreement_id = _funded_agreement(contract, direct_vm, direct_alice, direct_bob, amount=1000)
     direct_vm.sender = direct_alice
     contract.enable_warranty(agreement_id, 2000)
+    direct_vm.sender = direct_bob
+    contract.accept_economic_terms(agreement_id)
+    direct_vm.sender = direct_alice
     contract.freeze_agreement(agreement_id, False)
 
     direct_vm.sender = direct_bob
-    digest = hashlib.sha256(b"x").hexdigest()
+    valid_body = json.dumps({"status": "ok"})
+    digest = hashlib.sha256(valid_body.encode()).hexdigest()
     contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
-    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": json.dumps({"status": "ok"})})
+    direct_vm.mock_web(r".*api\.example.com/health.*", {"status": 200, "body": valid_body})
     contract.request_evaluation(agreement_id)
     direct_vm.sender = direct_alice
     contract.finalize_verdict(agreement_id)
@@ -199,6 +215,19 @@ def test_enable_warranty_bounds_and_authorization(direct_vm, direct_deploy, dire
         contract.enable_warranty(agreement_id, 1000)  # already configured
 
 
+def test_warranty_terms_need_both_parties_before_freeze(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy(CONTRACT)
+    agreement_id = _funded_agreement(contract, direct_vm, direct_alice, direct_bob)
+    direct_vm.sender = direct_alice
+    contract.enable_warranty(agreement_id, 2000)
+    with direct_vm.expect_revert():
+        contract.freeze_agreement(agreement_id, False)
+    direct_vm.sender = direct_bob
+    assert contract.accept_economic_terms(agreement_id) is True
+    direct_vm.sender = direct_alice
+    contract.freeze_agreement(agreement_id, False)
+
+
 def test_file_warranty_claim_requires_held_status_and_exact_bond(direct_vm, direct_deploy, direct_alice, direct_bob):
     contract = direct_deploy(CONTRACT)
     agreement_id = _funded_agreement(contract, direct_vm, direct_alice, direct_bob)
@@ -207,11 +236,15 @@ def test_file_warranty_claim_requires_held_status_and_exact_bond(direct_vm, dire
         contract.file_warranty_claim(agreement_id, "x", "https://a.example.com", hashlib.sha256(b"x").hexdigest(), "{}")
 
     contract.enable_warranty(agreement_id, 2000)
+    direct_vm.sender = direct_bob
+    contract.accept_economic_terms(agreement_id)
+    direct_vm.sender = direct_alice
     contract.freeze_agreement(agreement_id, False)
     direct_vm.sender = direct_bob
-    digest = hashlib.sha256(b"x").hexdigest()
+    valid_body = json.dumps({"status": "ok"})
+    digest = hashlib.sha256(valid_body.encode()).hexdigest()
     contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
-    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": json.dumps({"status": "ok"})})
+    direct_vm.mock_web(r".*api\.example.com/health.*", {"status": 200, "body": valid_body})
     contract.request_evaluation(agreement_id)
     direct_vm.sender = direct_alice
     contract.finalize_verdict(agreement_id)
@@ -226,8 +259,45 @@ def test_file_warranty_claim_requires_held_status_and_exact_bond(direct_vm, dire
     from genlayer.py.types import Address
     assert contract.get_claimable(str(Address(bytes(direct_alice)))) == 1
 
-    direct_vm.sender = direct_bob
+    direct_vm.sender = direct_alice
     direct_vm.value = 20
-    assert contract.file_warranty_claim(agreement_id, "x", "https://a.example.com", digest, "{}") == ""  # not the buyer
+    assert contract.file_warranty_claim(agreement_id, "x", "https://api.example.com/unrelated", digest, json.dumps({"criterion_id": "c1"})) == ""
     direct_vm.value = 0
-    assert contract.get_claimable(str(Address(bytes(direct_bob)))) == 800 + 20
+    assert contract.get_claimable(str(Address(bytes(direct_alice)))) == 1 + 20
+    assert contract.get_agreement(agreement_id)["warranty_status"] == "HELD"
+
+
+def test_unrelated_correctly_hashed_failing_warranty_evidence_is_refunded(direct_vm, direct_deploy, direct_alice, direct_bob):
+    """A hostile buyer cannot redirect a warranty holdback with a different
+    URL, even if that unrelated endpoint returns correctly hashed failing data."""
+    contract = direct_deploy(CONTRACT)
+    agreement_id = _funded_agreement(contract, direct_vm, direct_alice, direct_bob)
+    direct_vm.sender = direct_alice
+    contract.enable_warranty(agreement_id, 2000)
+    direct_vm.sender = direct_bob
+    assert contract.accept_economic_terms(agreement_id) is True
+    direct_vm.sender = direct_alice
+    contract.freeze_agreement(agreement_id, False)
+    direct_vm.sender = direct_bob
+    initial = json.dumps({"status": "ok"})
+    contract.submit_evidence(agreement_id, "https://api.example.com/health", hashlib.sha256(initial.encode()).hexdigest(), json.dumps({"criterion_id": "c1"}))
+    direct_vm.mock_web(r".*api\.example.com/health.*", {"status": 200, "body": initial})
+    contract.request_evaluation(agreement_id)
+    direct_vm.sender = direct_alice
+    contract.finalize_verdict(agreement_id)
+    direct_vm.sender = direct_bob
+    contract.finalize_verdict(agreement_id)
+    contract.settle(agreement_id)
+
+    hostile = json.dumps({"status": "failed"})
+    direct_vm.sender = direct_alice
+    direct_vm.value = 20
+    result = contract.file_warranty_claim(
+        agreement_id, "redirect funds", "https://attacker.example.net/health",
+        hashlib.sha256(hostile.encode()).hexdigest(), json.dumps({"criterion_id": "c1"}),
+    )
+    direct_vm.value = 0
+    assert result == ""
+    assert contract.get_agreement(agreement_id)["warranty_status"] == "HELD"
+    from genlayer.py.types import Address
+    assert contract.get_claimable(str(Address(bytes(direct_alice)))) == 20

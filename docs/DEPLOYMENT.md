@@ -1,8 +1,48 @@
 # Deployment
 
-## Status: deployed to GenLayer Studio Network; 34 of 38 numbered capabilities verified live, with four evidence-backed partials. The latest source is deployed at `0xe52Faa4e49AF53F3f1bD7fef274D324483784e44` and its invalid-payable refund and warranty evidence-digest protections were exercised live on 2026-10-18. The deployment transaction finalized with `execution_result: SUCCESS` and `MAJORITY_AGREE`; its 43-method schema is callable. Earlier deployment sections remain the evidence record for capabilities that were not changed in this release. See "Latest release: rejected-value refunds and warranty digest binding" below.
+## Corrected reviewer-fix release (2026-10-18)
 
-## Latest release: rejected-value refunds and warranty digest binding
+| Field | Value |
+|---|---|
+| Network / chain | GenLayer Studio Network / `61999` |
+| Contract | `0xCEE0430CcC760f1Dce94d2E416CbeCe2b1CB8c79` |
+| Deployment transaction | `0xc4f1be49ed4f0af80e12e6abc4d2b16f5d3e9acc2bf26c8a4ed2c20146148312` |
+| Deployment result | `FINALIZED`, `MAJORITY_AGREE`, leader `execution_result: SUCCESS` |
+| Source SHA-256 | `AFCDF4D9841F5F170644586A564DB4740961280654E0545F6B6C2C65E8C8734D` |
+| Callable schema | 45 methods (20 views, 25 writes), confirmed by GenVM lint and schema query |
+
+This release contains the reviewer fixes: warranty evidence is constrained to the original criterion and exact frozen
+service URL; API judgments assert configured JSON fields and HTTP status; normal evaluation rejects content that
+does not match the submitted digest; required insufficient evidence cannot produce a payable PASS; warranty and
+milestone economics require both parties to accept the current fingerprint before freeze; milestone phase and
+aggregate views are guarded; replay checks account for recovery; and withdrawal documentation limits guarantees if
+the EVM child transfer fails after claimable state is cleared.
+
+Corrected-release live evidence is currently limited to the malformed payable-funding regression:
+`0x25eda7e6f64c0286d74ea2496e4b4725d5e964e1d2c80ac88d711cf3bd01a53b` finalized with `MAJORITY_AGREE` and leader
+`execution_result: SUCCESS`, returned `false`, and credited exactly `5,000,000,000,000` atto to the caller's
+claimable refund. The agreement remained `ACCEPTED` with `funded_amount: 0`. Its preceding creation and acceptance
+transactions (`0x9469131a65430fbf8d55a8499ae66e34e42c07c4d7f2f08a8786fcbab2febda8` and
+`0xf9d060ebb4b7c30af0551bc7036c98ece27ebec048141f4d882a391517fbccb9`) also finalized successfully. The next
+`eth_getTransactionByHash` RPC request timed out at the transport layer. No later transaction was submitted; no live
+API/agent, warranty, milestone, hostile-evidence, or payout scenario is claimed for this release. The signer was
+generated in-process and not persisted; the 0.000005 GEN refund remains claimable by that disposable address, so the
+probe value is stranded absent its ephemeral signer. Fees were not logged separately, so cumulative spend including
+fees is not asserted here.
+
+The immediately preceding deployment `0xfC82591f5144ca4aaad7d541bcC615b5AeD29be3` (tx
+`0x481ce5149362128e697f8b81bab6509561280abd6b3c5c9eb8f97845efc44ead`) is superseded. Its source SHA was
+`612C3BB94841DE76CECD669C7F0AF3DFC20D9EE78B7D97F87E774D64DA9D8E37`, without the malformed-argument guard. A live
+payable call there finalized with execution `ERROR` after the SDK encoded an integer argument as a string;
+`value_credited: true`, while the agreement remained ACCEPTED and the contract held `50,000,000,000,000` atto with no
+claimable refund. This is stranded value on the superseded deployment, not evidence about the corrected release. The
+process-local signer is gone; no recovery is claimed.
+
+## Status: corrected source deployed; corrected-source live verification is incomplete
+
+The current source is deployed at `0xCEE0430CcC760f1Dce94d2E416CbeCe2b1CB8c79`; only the malformed-payable guard has been live-tested on that exact source. Historical evidence below belongs to prior source revisions. The corrected source has 89 passing Direct Mode tests and passes GenVM lint/schema validation. See "Corrected reviewer-fix release" above.
+
+## Historical release: rejected-value refunds and warranty digest binding
 
 | Field | Value |
 |---|---|

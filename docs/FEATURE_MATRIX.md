@@ -2,6 +2,26 @@
 
 Status categories: `IMPLEMENTED_VERIFIED` (proven under a real, `FINALIZED`, multi-validator-consensus transaction on GenLayer Studio Network, with its actual on-chain return value or state read back and checked), `IMPLEMENTED_LOCAL_ONLY` (real contract code + passing Direct Mode tests, not live-verifiable for a structural reason explained in that row), `PARTIAL` (a real, incomplete implementation), `NOT_IMPLEMENTED` (honestly not built).
 
+## Release-specific evidence correction (2026-10-18)
+
+The historical row evidence below was gathered against earlier source releases. The corrected reviewer-fix source is
+SHA-256 `AFCDF4D9841F5F170644586A564DB4740961280654E0545F6B6C2C65E8C8734D`, deployed at
+`0xCEE0430CcC760f1Dce94d2E416CbeCe2b1CB8c79` (deployment tx
+`0xc4f1be49ed4f0af80e12e6abc4d2b16f5d3e9acc2bf26c8a4ed2c20146148312`). It has 45 callable methods and successful
+deployment execution. Only the malformed-payable guard/refund behavior has been exercised live on this exact source
+so far (`0x25eda7e6f64c0286d74ea2496e4b4725d5e964e1d2c80ac88d711cf3bd01a53b`, finalized, `MAJORITY_AGREE`,
+`SUCCESS`, returned `false`, exact 5,000,000,000,000-atto claimable refund). Studionet RPC then timed out. Thus prior
+live evidence for native deposits/withdrawals, API/agent checks, warranty, appeals, and milestones is historical and
+must not be represented as verification of this corrected source. The affected rows' historical capability status
+describes implemented behavior; their current-release network-verification status is pending. The clock-based
+deadline limitation (#12), provenance limitation (#19), and finite warranty-window limitation (#33) remain.
+
+Current corrected-release status of reviewer-targeted changes: #3 funding guard live-verified only; #4 API expected
+status/fields local tests only; #5 and #7 integrity/consistency changes local tests only; #18 insufficiency gating
+local tests only; #25/#26 appeal/review changes local tests only; #29 payout and bond paths not re-verified; #30
+economic consent, phase gating, summary, and replay checks local tests only; #33 warranty evidence binding and
+consent local tests only. See the corresponding test references in the rows and `docs/DEPLOYMENT.md`.
+
 Each row below answers, in order: (1) implementation completeness, (2) the contract method(s), (3) the Direct Mode test(s), (4) whether and how it was verified on Studio Network, (5) what — if anything — remains before `IMPLEMENTED_VERIFIED` would apply.
 
 | # | Capability | Status | Method(s) | Test(s) | Studionet verification | Remaining gap |

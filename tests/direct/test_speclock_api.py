@@ -21,7 +21,7 @@ def _setup_frozen_agreement(contract, direct_vm, buyer, provider, url_bound_crit
         provider,
         "api_delivery",
         "Deliver GET https://api.example.com/health returning JSON body",
-        [{"id": url_bound_criterion, "description": "endpoint responds with a JSON object", "priority": "required", "evidence_method": "http:c1"}],
+        [{"id": url_bound_criterion, "description": "endpoint reports status ok", "priority": "required", "evidence_method": "http:c1", "expected_json": {"status": "ok"}}],
         1,
     )
     direct_vm.sender = provider
@@ -34,9 +34,10 @@ def _setup_frozen_agreement(contract, direct_vm, buyer, provider, url_bound_crit
     return agreement_id
 
 
-def _submit_evidence(contract, direct_vm, submitter, agreement_id, url):
+def _submit_evidence(contract, direct_vm, submitter, agreement_id, url, body=None):
     direct_vm.sender = submitter
-    digest = hashlib.sha256(url.encode()).hexdigest()
+    body = json.dumps({"status": "ok"}) if body is None else body
+    digest = hashlib.sha256(body.encode()).hexdigest()
     return contract.submit_evidence(agreement_id, url, digest, json.dumps({"criterion_id": "c1"}))
 
 
@@ -52,7 +53,8 @@ def _mutual_finalize(contract, direct_vm, buyer, provider, agreement_id):
 def test_api_positive_schema_consistent_response_passes(direct_vm, direct_deploy, direct_alice, direct_bob):
     contract = direct_deploy(CONTRACT)
     agreement_id = _setup_frozen_agreement(contract, direct_vm, direct_alice, direct_bob)
-    _submit_evidence(contract, direct_vm, direct_bob, agreement_id, "https://api.example.com/health")
+    good_body = json.dumps({"status": "ok"})
+    _submit_evidence(contract, direct_vm, direct_bob, agreement_id, "https://api.example.com/health", good_body)
 
     direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": json.dumps({"status": "ok"})})
 
@@ -68,7 +70,7 @@ def test_api_positive_schema_consistent_response_passes(direct_vm, direct_deploy
 def test_api_negative_200_with_wrong_payload_does_not_pass(direct_vm, direct_deploy, direct_alice, direct_bob):
     contract = direct_deploy(CONTRACT)
     agreement_id = _setup_frozen_agreement(contract, direct_vm, direct_alice, direct_bob)
-    _submit_evidence(contract, direct_vm, direct_bob, agreement_id, "https://api.example.com/health")
+    _submit_evidence(contract, direct_vm, direct_bob, agreement_id, "https://api.example.com/health", "not json")
 
     # 200 OK but an empty/non-JSON body: reachable but not functionally correct.
     direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": "not json"})
@@ -93,6 +95,50 @@ def test_api_uncertain_unreachable_host_is_unverifiable(direct_vm, direct_deploy
     evaluation = contract.get_evaluation(evaluation_id)
     assert evaluation["overall_finding"] == "UNVERIFIABLE"
     assert evaluation["findings"][0]["finding"] == "UNVERIFIABLE"
+
+
+def test_api_wrong_expected_field_value_fails_even_when_json_is_valid(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy(CONTRACT)
+    agreement_id = _setup_frozen_agreement(contract, direct_vm, direct_alice, direct_bob)
+    body = json.dumps({"status": "error"})
+    _submit_evidence(contract, direct_vm, direct_bob, agreement_id, "https://api.example.com/health", body)
+    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": body})
+    evaluation = contract.get_evaluation(contract.request_evaluation(agreement_id))
+    assert evaluation["overall_finding"] == "FAIL"
+    assert evaluation["findings"][0]["finding"] == "FAIL"
+
+
+def test_api_digest_mismatch_is_unverifiable_and_cannot_support_pass(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy(CONTRACT)
+    agreement_id = _setup_frozen_agreement(contract, direct_vm, direct_alice, direct_bob)
+    _submit_evidence(contract, direct_vm, direct_bob, agreement_id, "https://api.example.com/health", json.dumps({"status": "stale"}))
+    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": json.dumps({"status": "ok"})})
+    evaluation = contract.get_evaluation(contract.request_evaluation(agreement_id))
+    assert evaluation["overall_finding"] == "UNVERIFIABLE"
+    assert evaluation["findings"][0]["finding"] == "UNVERIFIABLE"
+    assert "digest" in evaluation["findings"][0]["rationale"]
+
+
+def test_api_missing_functional_assertions_cannot_pass(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy(CONTRACT)
+    direct_vm.sender = direct_alice
+    agreement_id = contract.create_agreement(
+        direct_bob, "api_delivery", "JSON response with an explicitly specified field",
+        [{"id": "c1", "description": "JSON endpoint", "priority": "required", "evidence_method": "http:c1"}], 1,
+    )
+    direct_vm.sender = direct_bob
+    contract.accept_agreement(agreement_id)
+    direct_vm.sender = direct_alice
+    direct_vm.value = 1000
+    contract.fund_agreement(agreement_id, 1000)
+    direct_vm.value = 0
+    contract.freeze_agreement(agreement_id, False)
+    body = json.dumps({"status": "ok"})
+    _submit_evidence(contract, direct_vm, direct_bob, agreement_id, "https://api.example.com/health", body)
+    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": body})
+    evaluation = contract.get_evaluation(contract.request_evaluation(agreement_id))
+    assert evaluation["overall_finding"] == "UNVERIFIABLE"
+    assert evaluation["findings"][0]["sufficiency"] == "INSUFFICIENT"
 
 
 def test_missing_evidence_for_criterion_is_unverifiable_not_fail(direct_vm, direct_deploy, direct_alice, direct_bob):

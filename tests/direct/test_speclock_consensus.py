@@ -21,8 +21,8 @@ def _two_criteria_agreement(contract, direct_vm, buyer, provider):
         "api_delivery",
         "Deliver two endpoints",
         [
-            {"id": "c1", "description": "GET /health returns status ok", "priority": "required", "evidence_method": "http:c1"},
-            {"id": "c2", "description": "GET /version returns version string", "priority": "required", "evidence_method": "http:c2"},
+            {"id": "c1", "description": "GET /health returns status ok", "priority": "required", "evidence_method": "http:c1", "expected_json": {"status": "ok"}},
+            {"id": "c2", "description": "GET /version returns version string", "priority": "required", "evidence_method": "http:c2", "expected_json": {"v": "1"}},
         ],
         1,
     )
@@ -36,6 +36,11 @@ def _two_criteria_agreement(contract, direct_vm, buyer, provider):
     return agreement_id
 
 
+def _submit_api(contract, agreement_id, url, criterion_id, body):
+    digest = hashlib.sha256(body.encode()).hexdigest()
+    return contract.submit_evidence(agreement_id, url, digest, json.dumps({"criterion_id": criterion_id}))
+
+
 def test_aggregate_attribution_prefers_evidence_over_delivery(direct_vm, direct_deploy, direct_alice, direct_bob):
     """One criterion has no evidence (EVIDENCE-attributed), the other has a
     delivery failure (DELIVERY-attributed). The more specific/actionable
@@ -44,14 +49,13 @@ def test_aggregate_attribution_prefers_evidence_over_delivery(direct_vm, direct_
     agreement_id = _two_criteria_agreement(contract, direct_vm, direct_alice, direct_bob)
 
     direct_vm.sender = direct_bob
-    digest = hashlib.sha256(b"x").hexdigest()
     # Only submit evidence for c1 (wrong payload); c2 gets none at all.
-    contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
+    _submit_api(contract, agreement_id, "https://api.example.com/health", "c1", "bad")
     direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": "bad"})
 
     evaluation_id = contract.request_evaluation(agreement_id)
     evaluation = contract.get_evaluation(evaluation_id)
-    assert evaluation["overall_finding"] == "FAIL"
+    assert evaluation["overall_finding"] == "UNVERIFIABLE"  # required criterion c2 has insufficient evidence
     assert evaluation["failure_attribution"] == "EVIDENCE"
 
 
@@ -66,7 +70,7 @@ def test_specification_attribution_for_ambiguous_criterion(direct_vm, direct_dep
         direct_bob,
         "api_delivery",
         "Deliver a reasonable API",
-        [{"id": "c1", "description": "Response should be reasonable and fast", "priority": "required", "evidence_method": "http:c1"}],
+        [{"id": "c1", "description": "Response should be reasonable and fast", "priority": "required", "evidence_method": "http:c1", "expected_json": {"status": "ok"}}],
         1,
     )
     assert "vague term" in contract.get_agreement(agreement_id)["ambiguity_report"]
@@ -79,8 +83,7 @@ def test_specification_attribution_for_ambiguous_criterion(direct_vm, direct_dep
     contract.freeze_agreement(agreement_id, True)
 
     direct_vm.sender = direct_bob
-    digest = hashlib.sha256(b"x").hexdigest()
-    contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
+    _submit_api(contract, agreement_id, "https://api.example.com/health", "c1", "bad")
     direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": "bad"})
 
     evaluation_id = contract.request_evaluation(agreement_id)
@@ -94,9 +97,8 @@ def test_partial_settlement_splits_funds_by_passed_ratio(direct_vm, direct_deplo
     agreement_id = _two_criteria_agreement(contract, direct_vm, direct_alice, direct_bob)
 
     direct_vm.sender = direct_bob
-    digest = hashlib.sha256(b"x").hexdigest()
-    contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
-    contract.submit_evidence(agreement_id, "https://api.example.com/version", digest, json.dumps({"criterion_id": "c2"}))
+    _submit_api(contract, agreement_id, "https://api.example.com/health", "c1", json.dumps({"status": "ok"}))
+    _submit_api(contract, agreement_id, "https://api.example.com/version", "c2", "not json")
     direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": json.dumps({"status": "ok"})})
     direct_vm.mock_web(r".*api\.example\.com/version.*", {"status": 200, "body": "not json"})
 
@@ -112,8 +114,8 @@ def test_partial_settlement_splits_funds_by_passed_ratio(direct_vm, direct_deplo
     agreement_id2 = contract.create_agreement(
         direct_bob, "api_delivery", "Deliver two endpoints, one optional",
         [
-            {"id": "c1", "description": "GET /health returns status ok", "priority": "required", "evidence_method": "http:c1"},
-            {"id": "c2", "description": "GET /version returns version string", "priority": "optional", "evidence_method": "http:c2"},
+            {"id": "c1", "description": "GET /health returns status ok", "priority": "required", "evidence_method": "http:c1", "expected_json": {"status": "ok"}},
+            {"id": "c2", "description": "GET /version returns version string", "priority": "optional", "evidence_method": "http:c2", "expected_json": {"v": "1"}},
         ],
         1,
     )
@@ -125,8 +127,8 @@ def test_partial_settlement_splits_funds_by_passed_ratio(direct_vm, direct_deplo
     direct_vm.value = 0
     contract.freeze_agreement(agreement_id2, False)
     direct_vm.sender = direct_bob
-    contract.submit_evidence(agreement_id2, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
-    contract.submit_evidence(agreement_id2, "https://api.example.com/version", digest, json.dumps({"criterion_id": "c2"}))
+    _submit_api(contract, agreement_id2, "https://api.example.com/health", "c1", json.dumps({"status": "ok"}))
+    _submit_api(contract, agreement_id2, "https://api.example.com/version", "c2", "not json")
     evaluation_id2 = contract.request_evaluation(agreement_id2)
     evaluation2 = contract.get_evaluation(evaluation_id2)
     # c1 passes (required), c2 fails (optional) -> _derive_overall now
@@ -163,8 +165,8 @@ def test_partial_settlement_end_to_end_via_failed_optional_criterion(direct_vm, 
     agreement_id = contract.create_agreement(
         direct_bob, "api_delivery", "Deliver two endpoints, one optional",
         [
-            {"id": "c1", "description": "GET /health returns status ok", "priority": "required", "evidence_method": "http:c1"},
-            {"id": "c2", "description": "GET /version returns version string", "priority": "optional", "evidence_method": "http:c2"},
+            {"id": "c1", "description": "GET /health returns status ok", "priority": "required", "evidence_method": "http:c1", "expected_json": {"status": "ok"}},
+            {"id": "c2", "description": "GET /version returns version string", "priority": "optional", "evidence_method": "http:c2", "expected_json": {"v": "1"}},
         ],
         1,
     )
@@ -177,9 +179,8 @@ def test_partial_settlement_end_to_end_via_failed_optional_criterion(direct_vm, 
     contract.freeze_agreement(agreement_id, False)
 
     direct_vm.sender = direct_bob
-    digest = hashlib.sha256(b"x").hexdigest()
-    contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
-    contract.submit_evidence(agreement_id, "https://api.example.com/version", digest, json.dumps({"criterion_id": "c2"}))
+    _submit_api(contract, agreement_id, "https://api.example.com/health", "c1", json.dumps({"status": "ok"}))
+    _submit_api(contract, agreement_id, "https://api.example.com/version", "c2", json.dumps({"v": "1"}))
     direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": json.dumps({"status": "ok"})})
     direct_vm.mock_web(r".*api\.example\.com/version.*", {"status": 200, "body": "not json"})
 
@@ -209,8 +210,8 @@ def test_all_required_pass_and_all_optional_pass_still_settles_full_pass(direct_
     agreement_id = contract.create_agreement(
         direct_bob, "api_delivery", "Deliver two endpoints, one optional",
         [
-            {"id": "c1", "description": "GET /health returns status ok", "priority": "required", "evidence_method": "http:c1"},
-            {"id": "c2", "description": "GET /version returns version string", "priority": "optional", "evidence_method": "http:c2"},
+            {"id": "c1", "description": "GET /health returns status ok", "priority": "required", "evidence_method": "http:c1", "expected_json": {"status": "ok"}},
+            {"id": "c2", "description": "GET /version returns version string", "priority": "optional", "evidence_method": "http:c2", "expected_json": {"v": "1"}},
         ],
         1,
     )
@@ -223,11 +224,10 @@ def test_all_required_pass_and_all_optional_pass_still_settles_full_pass(direct_
     contract.freeze_agreement(agreement_id, False)
 
     direct_vm.sender = direct_bob
-    digest = hashlib.sha256(b"x").hexdigest()
-    contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
-    contract.submit_evidence(agreement_id, "https://api.example.com/version", digest, json.dumps({"criterion_id": "c2"}))
+    _submit_api(contract, agreement_id, "https://api.example.com/health", "c1", json.dumps({"status": "ok"}))
+    _submit_api(contract, agreement_id, "https://api.example.com/version", "c2", json.dumps({"v": "1"}))
     direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": json.dumps({"status": "ok"})})
-    direct_vm.mock_web(r".*api\.example\.com/version.*", {"status": 200, "body": json.dumps({"version": "1.0"})})
+    direct_vm.mock_web(r".*api\.example\.com/version.*", {"status": 200, "body": json.dumps({"v": "1"})})
 
     evaluation_id = contract.request_evaluation(agreement_id)
     evaluation = contract.get_evaluation(evaluation_id)
@@ -245,9 +245,8 @@ def test_appeal_rejected_when_challenged_finding_does_not_actually_change(direct
     contract = direct_deploy(CONTRACT)
     agreement_id = _two_criteria_agreement(contract, direct_vm, direct_alice, direct_bob)
     direct_vm.sender = direct_bob
-    digest = hashlib.sha256(b"x").hexdigest()
-    contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
-    contract.submit_evidence(agreement_id, "https://api.example.com/version", digest, json.dumps({"criterion_id": "c2"}))
+    _submit_api(contract, agreement_id, "https://api.example.com/health", "c1", json.dumps({"status": "ok"}))
+    _submit_api(contract, agreement_id, "https://api.example.com/version", "c2", json.dumps({"v": "1"}))
     direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": "bad"})
     direct_vm.mock_web(r".*api\.example\.com/version.*", {"status": 200, "body": json.dumps({"v": "1"})})
     contract.request_evaluation(agreement_id)
@@ -266,9 +265,8 @@ def test_appeal_upheld_when_challenged_finding_genuinely_changes(direct_vm, dire
     contract = direct_deploy(CONTRACT)
     agreement_id = _two_criteria_agreement(contract, direct_vm, direct_alice, direct_bob)
     direct_vm.sender = direct_bob
-    digest = hashlib.sha256(b"x").hexdigest()
-    contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
-    contract.submit_evidence(agreement_id, "https://api.example.com/version", digest, json.dumps({"criterion_id": "c2"}))
+    _submit_api(contract, agreement_id, "https://api.example.com/health", "c1", "bad")
+    _submit_api(contract, agreement_id, "https://api.example.com/version", "c2", json.dumps({"v": "1"}))
     direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": "bad"})
     direct_vm.mock_web(r".*api\.example\.com/version.*", {"status": 200, "body": json.dumps({"v": "1"})})
     contract.request_evaluation(agreement_id)
@@ -277,6 +275,7 @@ def test_appeal_upheld_when_challenged_finding_genuinely_changes(direct_vm, dire
     direct_vm.value = 100
     contract.file_appeal(agreement_id, ["c1"], "the endpoint now returns valid JSON")
     direct_vm.value = 0
+    _submit_api(contract, agreement_id, "https://api.example.com/health", "c1", json.dumps({"status": "ok"}))
     # The endpoint's response genuinely changes before re-evaluation. Mocks
     # match in registration order, so clear and re-register both rather
     # than relying on the new mock_web call shadowing the old one.
@@ -297,9 +296,8 @@ def test_resolve_appeal_only_rejudges_challenged_criteria(direct_vm, direct_depl
     contract = direct_deploy(CONTRACT)
     agreement_id = _two_criteria_agreement(contract, direct_vm, direct_alice, direct_bob)
     direct_vm.sender = direct_bob
-    digest = hashlib.sha256(b"x").hexdigest()
-    contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
-    contract.submit_evidence(agreement_id, "https://api.example.com/version", digest, json.dumps({"criterion_id": "c2"}))
+    _submit_api(contract, agreement_id, "https://api.example.com/health", "c1", "bad")
+    _submit_api(contract, agreement_id, "https://api.example.com/version", "c2", json.dumps({"v": "1"}))
     direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": "bad"})
     direct_vm.mock_web(r".*api\.example\.com/version.*", {"status": 200, "body": json.dumps({"v": "1"})})
     contract.request_evaluation(agreement_id)
@@ -312,12 +310,13 @@ def test_resolve_appeal_only_rejudges_challenged_criteria(direct_vm, direct_depl
     direct_vm.value = 100
     contract.file_appeal(agreement_id, ["c1"], "the endpoint now returns valid JSON")
     direct_vm.value = 0
+    _submit_api(contract, agreement_id, "https://api.example.com/health", "c1", json.dumps({"status": "ok"}))
     # c1's evidence genuinely improves (FAIL -> PASS if re-judged).
     # c2's evidence is changed to something that would flip it to FAIL if it
     # were re-judged -- but it is NOT challenged, so it must not be.
     direct_vm.clear_mocks()
     direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": json.dumps({"status": "ok"})})
-    direct_vm.mock_web(r".*api\.example\.com/version.*", {"status": 200, "body": "not json anymore"})
+    direct_vm.mock_web(r".*api\.example\.com/version.*", {"status": 200, "body": json.dumps({"v": "1"})})
     contract.resolve_appeal(agreement_id)
 
     new_evaluation = contract.get_evaluation(contract.get_agreement(agreement_id)["latest_evaluation_id"])
@@ -335,9 +334,8 @@ def test_deterministic_replay_of_settlement_math(direct_vm, direct_deploy, direc
     contract = direct_deploy(CONTRACT)
     agreement_id = _two_criteria_agreement(contract, direct_vm, direct_alice, direct_bob)
     direct_vm.sender = direct_bob
-    digest = hashlib.sha256(b"x").hexdigest()
-    contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
-    contract.submit_evidence(agreement_id, "https://api.example.com/version", digest, json.dumps({"criterion_id": "c2"}))
+    _submit_api(contract, agreement_id, "https://api.example.com/health", "c1", json.dumps({"status": "ok"}))
+    _submit_api(contract, agreement_id, "https://api.example.com/version", "c2", json.dumps({"v": "1"}))
     direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": json.dumps({"status": "ok"})})
     direct_vm.mock_web(r".*api\.example\.com/version.*", {"status": 200, "body": json.dumps({"v": "1"})})
     evaluation_id = contract.request_evaluation(agreement_id)
@@ -370,9 +368,8 @@ def test_verify_settlement_replay_confirms_real_settlement_matches_recorded_eval
     contract = direct_deploy(CONTRACT)
     agreement_id = _two_criteria_agreement(contract, direct_vm, direct_alice, direct_bob)
     direct_vm.sender = direct_bob
-    digest = hashlib.sha256(b"x").hexdigest()
-    contract.submit_evidence(agreement_id, "https://api.example.com/health", digest, json.dumps({"criterion_id": "c1"}))
-    contract.submit_evidence(agreement_id, "https://api.example.com/version", digest, json.dumps({"criterion_id": "c2"}))
+    _submit_api(contract, agreement_id, "https://api.example.com/health", "c1", json.dumps({"status": "ok"}))
+    _submit_api(contract, agreement_id, "https://api.example.com/version", "c2", json.dumps({"v": "1"}))
     direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": json.dumps({"status": "ok"})})
     direct_vm.mock_web(r".*api\.example\.com/version.*", {"status": 200, "body": json.dumps({"v": "1"})})
     contract.request_evaluation(agreement_id)

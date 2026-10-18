@@ -271,6 +271,38 @@ def _parse_json_strict(text: str, max_chars: int) -> dict:
     return data
 
 
+def _json_matches_expected(actual, expected) -> bool:
+    """Match an expected JSON object as a recursive subset.
+
+    Object members in `expected` must exist and match exactly by value;
+    extra response fields are allowed. Arrays and scalars match exactly.
+    This deliberately supports a small deterministic assertion language.
+    """
+    if isinstance(expected, dict):
+        return isinstance(actual, dict) and all(
+            key in actual and _json_matches_expected(actual[key], value)
+            for key, value in expected.items()
+        )
+    if isinstance(expected, list):
+        return isinstance(actual, list) and len(actual) == len(expected) and all(
+            _json_matches_expected(a, e) for a, e in zip(actual, expected)
+        )
+    if isinstance(actual, bool) != isinstance(expected, bool):
+        return False
+    return actual == expected
+
+
+def _criterion_id_from_metadata(metadata_json: str) -> str:
+    try:
+        metadata = json.loads(metadata_json)
+    except Exception:
+        return ""
+    if not isinstance(metadata, dict):
+        return ""
+    criterion_id = metadata.get("criterion_id")
+    return criterion_id if isinstance(criterion_id, str) else ""
+
+
 # --------------------------------------------------------------------------
 # Storage records
 # --------------------------------------------------------------------------
@@ -316,6 +348,8 @@ class Agreement:
     warranty_held_amount: u256
     warranty_status: str  # NONE | HELD | CLAIMED | RELEASED
     latest_warranty_claim_id: str
+    buyer_economic_terms_hash: str
+    provider_economic_terms_hash: str
 
 
 @allow_storage
@@ -433,6 +467,7 @@ class WarrantyClaim:
 
     claim_id: str
     agreement_id: str
+    criterion_id: str
     grounds: str
     evidence_url: str
     evidence_digest: str
@@ -526,7 +561,7 @@ class SpecLock(gl.Contract):
             raise gl.vm.UserError(f"{ERROR_EXPECTED} unknown agreement_id")
         return self.agreements[agreement_id]
 
-    def _compile_criteria(self, raw_criteria: list) -> tuple:
+    def _compile_criteria(self, raw_criteria: list, profile: str) -> tuple:
         """Deterministic specification compiler (capability 16/17): bounds
         and structures natural-language criteria, flags ambiguity/conflict
         before freeze. Returns (criteria_json, ambiguity_report_json)."""
@@ -548,6 +583,14 @@ class SpecLock(gl.Contract):
             priority = str(c.get("priority", "required"))
             self._require(priority in ("required", "optional"), f"criterion {cid} has invalid priority")
             evidence_method = str(c.get("evidence_method", "manual"))
+            expected_json = c.get("expected_json", {})
+            expected_status = c.get("expected_status", 200)
+            if profile == PROFILE_API:
+                self._require(isinstance(expected_json, dict), f"criterion {cid} expected_json must be an object")
+                self._require(
+                    isinstance(expected_status, int) and not isinstance(expected_status, bool) and 100 <= expected_status <= 599,
+                    f"criterion {cid} expected_status must be an HTTP status from 100 to 599",
+                )
             lowered = desc.lower()
             for term in vague_terms:
                 if term in lowered and "threshold" not in lowered and "exact" not in lowered:
@@ -558,12 +601,53 @@ class SpecLock(gl.Contract):
                     "description": desc,
                     "priority": priority,
                     "evidence_method": evidence_method,
+                    "expected_json": expected_json if isinstance(expected_json, dict) else {},
+                    "expected_status": expected_status if isinstance(expected_status, int) else 200,
                 }
             )
         return json.dumps(compiled, sort_keys=True), json.dumps(ambiguous, sort_keys=True)
 
     def _is_party(self, agreement: Agreement, who: Address) -> bool:
         return who == agreement.buyer or who == agreement.provider
+
+    def _economic_terms_fingerprint(self, agreement: Agreement) -> str:
+        milestones = []
+        if agreement.agreement_id in self.milestone_index:
+            for milestone_id in self.milestone_index[agreement.agreement_id]:
+                milestone = self.milestones[milestone_id]
+                milestones.append({
+                    "criteria_ids": json.loads(milestone.criteria_ids_json),
+                    "amount": int(milestone.allocated_amount),
+                })
+        payload = {
+            "agreement_id": agreement.agreement_id,
+            "funded_amount": int(agreement.funded_amount),
+            "warranty_bps": int(agreement.warranty_bps),
+            "milestones": milestones,
+        }
+        return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+    def _requires_economic_consent(self, agreement: Agreement) -> bool:
+        return int(agreement.warranty_bps) > 0 or agreement.milestones_defined
+
+    @gl.public.write
+    def accept_economic_terms(self, agreement_id: str) -> bool:
+        """Bilateral acceptance of the configured warranty/milestone economics."""
+        agreement = self._get_agreement(agreement_id)
+        self._require(agreement.phase == PHASE_FUNDED, "economic terms can only be accepted while FUNDED")
+        self._require(self._requires_economic_consent(agreement), "no additional economic terms are configured")
+        caller = gl.message.sender_address
+        self._require(self._is_party(agreement, caller), "only a party may accept economic terms")
+        fingerprint = self._economic_terms_fingerprint(agreement)
+        if caller == agreement.buyer:
+            agreement.buyer_economic_terms_hash = fingerprint
+        else:
+            agreement.provider_economic_terms_hash = fingerprint
+        self.agreements[agreement_id] = agreement
+        return (
+            agreement.buyer_economic_terms_hash == fingerprint
+            and agreement.provider_economic_terms_hash == fingerprint
+        )
 
     # ---------------------------------------------------------------
     # Capability 1-2: natural-language registration + specification freeze
@@ -586,7 +670,7 @@ class SpecLock(gl.Contract):
         buyer = gl.message.sender_address
         self._require(provider != buyer, "provider and buyer must differ")
 
-        criteria_json, ambiguity_report = self._compile_criteria(criteria)
+        criteria_json, ambiguity_report = self._compile_criteria(criteria, profile)
         fingerprint = _spec_fingerprint(spec_text, criteria_json, POLICY_ID, POLICY_VERSION)
 
         agreement_id = str(self.next_agreement_seq)
@@ -631,6 +715,8 @@ class SpecLock(gl.Contract):
             warranty_held_amount=u256(0),
             warranty_status="NONE",
             latest_warranty_claim_id="",
+            buyer_economic_terms_hash="",
+            provider_economic_terms_hash="",
         )
         self.agreements[agreement_id] = agreement
         self.evidence_index.get_or_insert_default(agreement_id)
@@ -666,6 +752,7 @@ class SpecLock(gl.Contract):
             self._require(False, "unknown agreement_id")
         agreement = self.agreements[agreement_id]
         if (agreement.phase != PHASE_ACCEPTED or caller != agreement.buyer
+                or not isinstance(amount, int) or isinstance(amount, bool)
                 or amount <= 0 or sent <= 0 or sent != amount):
             if sent > 0:
                 self._refund_rejected_value(caller, sent)
@@ -701,6 +788,8 @@ class SpecLock(gl.Contract):
         self._require(int(agreement.warranty_bps) == 0, "warranty already configured for this agreement")
         self._require(1 <= warranty_bps <= MAX_WARRANTY_BPS, "warranty_bps out of bounds")
         agreement.warranty_bps = u256(warranty_bps)
+        agreement.buyer_economic_terms_hash = self._economic_terms_fingerprint(agreement)
+        agreement.provider_economic_terms_hash = ""
         self.agreements[agreement_id] = agreement
 
     @gl.public.write
@@ -775,6 +864,8 @@ class SpecLock(gl.Contract):
 
         agreement.uses_milestones = True
         agreement.milestones_defined = True
+        agreement.buyer_economic_terms_hash = self._economic_terms_fingerprint(agreement)
+        agreement.provider_economic_terms_hash = ""
         self.agreements[agreement_id] = agreement
         return milestone_ids
 
@@ -784,6 +875,13 @@ class SpecLock(gl.Contract):
         self._require(agreement.phase == PHASE_FUNDED, "agreement must be FUNDED before freeze")
         caller = gl.message.sender_address
         self._require(self._is_party(agreement, caller), "only a party may freeze the agreement")
+        if self._requires_economic_consent(agreement):
+            fingerprint = self._economic_terms_fingerprint(agreement)
+            self._require(
+                agreement.buyer_economic_terms_hash == fingerprint
+                and agreement.provider_economic_terms_hash == fingerprint,
+                "both parties must accept the configured warranty/milestone economic terms before freeze",
+            )
         ambiguity = json.loads(agreement.ambiguity_report)
         if len(ambiguity) > 0:
             # Capability 17: an ambiguous/conflicting agreement cannot
@@ -843,7 +941,7 @@ class SpecLock(gl.Contract):
     @gl.public.write
     def submit_evidence(self, agreement_id: str, url: str, declared_digest: str, metadata_json: str) -> str:
         agreement = self._get_agreement(agreement_id)
-        self._require(agreement.phase in (PHASE_FROZEN, PHASE_SUBMITTED, PHASE_RESUBMISSION_REQUESTED), "evidence not acceptable in this phase")
+        self._require(agreement.phase in (PHASE_FROZEN, PHASE_SUBMITTED, PHASE_RESUBMISSION_REQUESTED, PHASE_APPEALED), "evidence not acceptable in this phase")
         caller = gl.message.sender_address
         self._require(self._is_party(agreement, caller), "only a party may submit evidence")
         _validate_url(url)
@@ -853,6 +951,13 @@ class SpecLock(gl.Contract):
             json.loads(metadata_json) if metadata_json else {}
         except Exception:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} metadata_json must be valid JSON")
+        if agreement.phase == PHASE_APPEALED:
+            self._require(bool(agreement.latest_appeal_id), "appealed evidence requires an active appeal")
+            challenged = set(json.loads(self.appeals[agreement.latest_appeal_id].challenged_finding_ids_json))
+            self._require(
+                _criterion_id_from_metadata(metadata_json) in challenged,
+                "appealed evidence must be tagged to a challenged criterion",
+            )
 
         receipt_ids = self.evidence_index[agreement_id]
         self._require(len(receipt_ids) < MAX_EVIDENCE_PER_AGREEMENT, "evidence cap reached for this agreement")
@@ -887,6 +992,24 @@ class SpecLock(gl.Contract):
             if rec.status != "REJECTED":
                 parts.append(f"{rid}:{rec.content_digest}")
         return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
+
+    def _warranty_claim_criterion(self, agreement: Agreement, evidence_url: str, metadata_json: str) -> str:
+        """Return the criterion only when claim URL is a frozen service URL."""
+        criterion_id = _criterion_id_from_metadata(metadata_json)
+        if not criterion_id or not any(
+            c["id"] == criterion_id for c in json.loads(agreement.criteria_json)
+        ):
+            return ""
+        evidence_ids = list(self.evidence_index[agreement.agreement_id]) if agreement.agreement_id in self.evidence_index else []
+        for evidence_id in evidence_ids:
+            evidence = self.evidence[evidence_id]
+            if (
+                evidence.status == "FROZEN"
+                and _criterion_id_from_metadata(evidence.metadata_json) == criterion_id
+                and evidence.url == evidence_url
+            ):
+                return criterion_id
+        return ""
 
     def _freeze_all_evidence(self, agreement_id: str) -> None:
         for rid in self.evidence_index[agreement_id]:
@@ -1024,13 +1147,22 @@ class SpecLock(gl.Contract):
         required_ids = {c["id"] for c in criteria if c["priority"] == "required"}
         optional_ids = {c["id"] for c in criteria if c["priority"] == "optional"}
         by_id = {f["criterion_id"]: f for f in findings}
+        if any(
+            by_id.get(cid, {}).get("sufficiency") != SUFFICIENCY_SUFFICIENT
+            for cid in required_ids
+        ):
+            return FINDING_UNVERIFIABLE
         if any(by_id.get(cid, {}).get("finding") == FINDING_FAIL for cid in required_ids):
             return FINDING_FAIL
         if any(by_id.get(cid, {}).get("finding") == FINDING_UNVERIFIABLE for cid in required_ids):
             return FINDING_UNVERIFIABLE
         if any(by_id.get(cid, {}).get("finding") == FINDING_PARTIAL for cid in required_ids):
             return FINDING_PARTIAL
-        if any(by_id.get(cid, {}).get("finding") != FINDING_PASS for cid in optional_ids):
+        if any(
+            by_id.get(cid, {}).get("finding") != FINDING_PASS
+            or by_id.get(cid, {}).get("sufficiency") != SUFFICIENCY_SUFFICIENT
+            for cid in optional_ids
+        ):
             return FINDING_PARTIAL
         return FINDING_PASS
 
@@ -1039,7 +1171,7 @@ class SpecLock(gl.Contract):
     def _evaluate_api_profile(self, criteria: list, evidence_recs: list, enforce_digest: bool = False) -> dict:
         findings = []
         for c in criteria:
-            probe_evidence = [e for e in evidence_recs if c["id"] in e.metadata_json]
+            probe_evidence = [e for e in evidence_recs if _criterion_id_from_metadata(e.metadata_json) == c["id"]]
             if not probe_evidence:
                 findings.append(
                     {
@@ -1055,9 +1187,7 @@ class SpecLock(gl.Contract):
             # is what makes request_resubmission's corrective evidence actually
             # take effect on re-evaluation, rather than always re-probing the
             # first (possibly stale/wrong) evidence ever submitted.
-            finding, sufficiency, rationale, attribution = self._probe_api_criterion(
-                c, probe_evidence[-1], enforce_digest=enforce_digest
-            )
+            finding, sufficiency, rationale, attribution = self._probe_api_criterion(c, probe_evidence[-1], enforce_digest=True)
             findings.append(
                 {
                     "criterion_id": c["id"],
@@ -1094,14 +1224,16 @@ class SpecLock(gl.Contract):
                 body = body[:MAX_FETCH_BYTES]
             reachable = status is not None and status < 500
             functional = False
-            if status == 200:
+            expected = criterion.get("expected_json", {})
+            expected_status = criterion.get("expected_status", 200)
+            assertions_defined = isinstance(expected, dict) and bool(expected)
+            if assertions_defined and status == expected_status:
                 try:
                     payload = json.loads(body.decode("utf-8"))
-                    expects = criterion.get("evidence_method", "")
-                    functional = isinstance(payload, (dict, list)) and ("schema" not in expects or bool(payload))
+                    functional = _json_matches_expected(payload, expected)
                 except Exception:
                     functional = False
-            return {"reachable": reachable, "functional": functional, "status": status, "digest_matches": digest_matches}
+            return {"reachable": reachable, "functional": functional, "status": status, "digest_matches": digest_matches, "assertions_defined": assertions_defined}
 
         def validator_fn(leaders_res) -> bool:
             if not isinstance(leaders_res, gl.vm.Return):
@@ -1111,6 +1243,7 @@ class SpecLock(gl.Contract):
             return (
                 leader_view.get("reachable") == validator_view.get("reachable")
                 and leader_view.get("functional") == validator_view.get("functional")
+                and leader_view.get("assertions_defined") == validator_view.get("assertions_defined")
                 and (not enforce_digest or leader_view.get("digest_matches") == validator_view.get("digest_matches"))
             )
 
@@ -1123,6 +1256,8 @@ class SpecLock(gl.Contract):
             return FINDING_UNVERIFIABLE, SUFFICIENCY_UNVERIFIABLE, "endpoint unreachable at evaluation time", ATTRIBUTION_EXTERNAL
         if enforce_digest and not observation.get("digest_matches"):
             return FINDING_UNVERIFIABLE, SUFFICIENCY_UNVERIFIABLE, "fetched evidence does not match the committed digest", ATTRIBUTION_EVIDENCE
+        if not observation.get("assertions_defined"):
+            return FINDING_UNVERIFIABLE, SUFFICIENCY_INSUFFICIENT, "API criterion has no expected_json assertions", ATTRIBUTION_SPECIFICATION
         if observation.get("functional"):
             return FINDING_PASS, SUFFICIENCY_SUFFICIENT, f"HTTP {observation.get('status')} with schema-consistent body", ATTRIBUTION_UNKNOWN
         return FINDING_FAIL, SUFFICIENCY_SUFFICIENT, f"HTTP {observation.get('status')} but response failed functional check", ATTRIBUTION_DELIVERY
@@ -1132,7 +1267,7 @@ class SpecLock(gl.Contract):
     def _evaluate_agent_profile(self, criteria: list, evidence_recs: list, enforce_digest: bool = False) -> dict:
         findings = []
         for c in criteria:
-            matching = [e for e in evidence_recs if c["id"] in e.metadata_json]
+            matching = [e for e in evidence_recs if _criterion_id_from_metadata(e.metadata_json) == c["id"]]
             if not matching:
                 findings.append(
                     {
@@ -1145,7 +1280,7 @@ class SpecLock(gl.Contract):
                 )
                 continue
             finding, sufficiency, rationale, attribution = self._judge_agent_criterion(
-                c, matching, enforce_digest=enforce_digest
+                c, matching, enforce_digest=True
             )
             findings.append(
                 {
@@ -1580,6 +1715,17 @@ class SpecLock(gl.Contract):
             return released, refunded, 0, PHASE_SETTLED
         return 0, 0, funded, PHASE_RECOVERY_PENDING  # UNVERIFIABLE
 
+    def _compute_agreement_settlement_amounts(self, agreement: Agreement, evaluation: "Evaluation") -> tuple:
+        released, refunded, retained, terminal_phase = self._compute_settlement_amounts(
+            int(agreement.funded_amount), evaluation
+        )
+        holdback = 0
+        if int(agreement.warranty_bps) > 0 and released > 0 and terminal_phase == PHASE_SETTLED:
+            holdback = (released * int(agreement.warranty_bps)) // 10_000
+            released -= holdback
+            retained += holdback
+        return released, refunded, retained, terminal_phase, holdback
+
     @gl.public.write
     def settle(self, agreement_id: str) -> str:
         agreement = self._get_agreement(agreement_id)
@@ -1587,22 +1733,12 @@ class SpecLock(gl.Contract):
         self._require(agreement.phase == PHASE_FINALIZED, "agreement is not finalized")
         self._require(agreement.settlement_id == "", "settlement already recorded for this agreement")
         evaluation = self.evaluations[agreement.latest_evaluation_id]
-        funded = int(agreement.funded_amount)
-        released, refunded, retained, terminal_phase = self._compute_settlement_amounts(funded, evaluation)
-        # Capability 33: a configured warranty_bps diverts part of a real
-        # release into a holdback instead of crediting the provider
-        # immediately. The holdback is folded into `retained` so the
-        # conservation check in `_settle` (released+refunded+retained ==
-        # funded) still holds exactly; `warranty_held_amount`/
-        # `warranty_status` record it separately for later resolution.
-        warranty_bps = int(agreement.warranty_bps)
-        if warranty_bps > 0 and released > 0 and terminal_phase == PHASE_SETTLED:
-            holdback = (released * warranty_bps) // 10_000
-            if holdback > 0:
-                released -= holdback
-                retained += holdback
-                agreement.warranty_held_amount = u256(holdback)
-                agreement.warranty_status = "HELD"
+        released, refunded, retained, terminal_phase, holdback = self._compute_agreement_settlement_amounts(
+            agreement, evaluation
+        )
+        if holdback > 0:
+            agreement.warranty_held_amount = u256(holdback)
+            agreement.warranty_status = "HELD"
         self._settle(agreement, released, refunded, retained, terminal_phase)
         return agreement.settlement_id
 
@@ -1656,6 +1792,7 @@ class SpecLock(gl.Contract):
             self._require(False, "unknown agreement_id")
         agreement = self.agreements[agreement_id]
         reason = ""
+        claim_criterion_id = self._warranty_claim_criterion(agreement, evidence_url, evidence_metadata_json)
         if agreement.warranty_status != "HELD":
             reason = "no active warranty holdback to claim against"
         elif caller != agreement.buyer:
@@ -1666,6 +1803,8 @@ class SpecLock(gl.Contract):
             reason = "evidence_digest must be a sha256 hex digest"
         elif len(evidence_metadata_json) > MAX_EVIDENCE_METADATA_CHARS:
             reason = "evidence metadata too large"
+        elif not claim_criterion_id:
+            reason = "warranty evidence must match a frozen service URL and criterion on this agreement"
         else:
             try:
                 _validate_url(evidence_url)
@@ -1691,6 +1830,7 @@ class SpecLock(gl.Contract):
         claim = WarrantyClaim(
             claim_id=claim_id,
             agreement_id=agreement_id,
+            criterion_id=claim_criterion_id,
             grounds=grounds,
             evidence_url=evidence_url,
             evidence_digest=evidence_digest.lower(),
@@ -1736,7 +1876,10 @@ class SpecLock(gl.Contract):
             status="FROZEN",
             submitted_at=u256(self._next_seq()),
         )
-        all_criteria = json.loads(agreement.criteria_json)
+        all_criteria = [
+            criterion for criterion in json.loads(agreement.criteria_json)
+            if criterion["id"] == claim.criterion_id
+        ]
         if agreement.profile == PROFILE_API:
             result = self._evaluate_api_profile(all_criteria, [receipt], enforce_digest=True)
         else:
@@ -1834,6 +1977,10 @@ class SpecLock(gl.Contract):
     def request_milestone_evaluation(self, agreement_id: str, milestone_id: str) -> str:
         agreement = self._get_agreement(agreement_id)
         self._require(agreement.uses_milestones, "agreement does not use milestones")
+        self._require(
+            agreement.phase in (PHASE_FROZEN, PHASE_SUBMITTED),
+            "milestone evaluation requires the agreement to be frozen and evidence submission to have begun",
+        )
         milestone = self._get_milestone(agreement_id, milestone_id)
         self._require(milestone.phase == MS_PENDING, "milestone evaluation already requested or completed")
         caller = gl.message.sender_address
@@ -1928,14 +2075,16 @@ class SpecLock(gl.Contract):
     @gl.public.write
     def withdraw(self) -> int:
         """Pull model: zeroes the caller's claimable balance BEFORE
-        scheduling the transfer (checks-effects-interactions), then pays it
-        out via the EVM-layer interface (`_EthAccount(...).emit_transfer`) —
+        scheduling the transfer (checks-effects-interactions), then requests
+        payment via the EVM-layer interface (`_EthAccount(...).emit_transfer`) —
         the correct path for a plain wallet (EOA) recipient, unlike
         `gl.get_contract_at(...)` (see the module docstring and
         `DECISION.md` item 8/10 for why). This call is a plain
         deterministic `@gl.public.write` method, never invoked from inside a
-        nondeterministic block, so the external transfer always executes on
-        protocol finalization with no consensus-equivalence concerns."""
+        nondeterministic block. GenVM exposes no transfer-result callback to
+        restore the credit if the child transfer later fails; that residual
+        liveness limitation is documented in docs/SECURITY.md and is not
+        presented as recoverable by this contract."""
         caller = gl.message.sender_address
         key = str(caller)
         amount = int(self.claimable[key]) if key in self.claimable else 0
@@ -1987,6 +2136,8 @@ class SpecLock(gl.Contract):
             "warranty_held_amount": int(a.warranty_held_amount),
             "warranty_status": a.warranty_status,
             "latest_warranty_claim_id": a.latest_warranty_claim_id,
+            "buyer_economic_terms_hash": a.buyer_economic_terms_hash,
+            "provider_economic_terms_hash": a.provider_economic_terms_hash,
         }
 
     @gl.public.view
@@ -2016,6 +2167,25 @@ class SpecLock(gl.Contract):
     def get_milestones(self, agreement_id: str) -> list:
         ids = list(self.milestone_index[agreement_id]) if agreement_id in self.milestone_index else []
         return [self.get_milestone(mid) for mid in ids]
+
+    @gl.public.view
+    def get_milestone_summary(self, agreement_id: str) -> dict:
+        """Aggregate completion and reconciled amounts for consumer UIs."""
+        agreement = self._get_agreement(agreement_id)
+        milestones = self.get_milestones(agreement_id)
+        complete_phases = (MS_SETTLED, MS_REFUNDED)
+        return {
+            "agreement_id": agreement_id,
+            "uses_milestones": agreement.uses_milestones,
+            "milestone_count": len(milestones),
+            "completed_count": sum(1 for m in milestones if m["phase"] in complete_phases),
+            "pending_count": sum(1 for m in milestones if m["phase"] not in complete_phases),
+            "all_complete": bool(milestones) and all(m["phase"] in complete_phases for m in milestones),
+            "allocated_amount": sum(m["allocated_amount"] for m in milestones),
+            "released_amount": sum(m["released_amount"] for m in milestones),
+            "refunded_amount": sum(m["refunded_amount"] for m in milestones),
+            "retained_amount": sum(m["retained_amount"] for m in milestones),
+        }
 
     @gl.public.view
     def get_evidence_receipt(self, receipt_id: str) -> dict:
@@ -2159,33 +2329,77 @@ class SpecLock(gl.Contract):
         evaluation, or could it have been tampered with / drifted?" without
         trusting a one-time claim that it does."""
         agreement = self._get_agreement(agreement_id)
+        if agreement.uses_milestones:
+            milestones = self.get_milestones(agreement_id)
+            rows = []
+            for milestone in milestones:
+                if not milestone["settlement_id"]:
+                    rows.append({"milestone_id": milestone["milestone_id"], "settled": False, "matches": False})
+                    continue
+                evaluation = self.evaluations[milestone["latest_evaluation_id"]]
+                settlement = self.settlements[milestone["settlement_id"]]
+                allocated = milestone["allocated_amount"]
+                released, refunded, retained, phase = self._compute_settlement_amounts(allocated, evaluation)
+                recovery_applied = evaluation.overall_finding == FINDING_UNVERIFIABLE and milestone["phase"] == MS_REFUNDED
+                if recovery_applied:
+                    released, refunded, retained, phase = 0, allocated, 0, MS_REFUNDED
+                elif phase == PHASE_RECOVERY_PENDING:
+                    phase = MS_RECOVERY_PENDING
+                else:
+                    phase = MS_SETTLED
+                matches = (
+                    released == int(settlement.released_to_provider)
+                    and refunded == int(settlement.refunded_to_buyer)
+                    and retained == int(settlement.retained)
+                    and phase == settlement.terminal_phase
+                )
+                rows.append({
+                    "milestone_id": milestone["milestone_id"],
+                    "settlement_id": milestone["settlement_id"],
+                    "evaluation_id": milestone["latest_evaluation_id"],
+                    "settled": True,
+                    "recovery_applied": recovery_applied,
+                    "matches": matches,
+                })
+            complete = bool(rows) and all(row["settled"] for row in rows)
+            return {
+                "agreement_id": agreement_id,
+                "mode": "MILESTONES",
+                "milestones": rows,
+                "all_settled": complete,
+                "matches_recorded_settlement": complete and all(row["matches"] for row in rows),
+                "note": "Recomputes each recorded milestone settlement; it does not replay prior web or LLM observations.",
+            }
+
         self._require(agreement.settlement_id != "", "agreement not settled")
         evaluation = self.evaluations[agreement.latest_evaluation_id]
         settlement = self.settlements[agreement.settlement_id]
-        funded = int(agreement.funded_amount)
-        recomputed_released, recomputed_refunded, recomputed_retained, recomputed_terminal_phase = (
-            self._compute_settlement_amounts(funded, evaluation)
+        recovery_applied = (
+            evaluation.overall_finding == FINDING_UNVERIFIABLE
+            and settlement.terminal_phase == PHASE_REFUNDED
         )
+        if recovery_applied:
+            released, refunded, retained, phase = 0, int(agreement.funded_amount), 0, PHASE_REFUNDED
+        else:
+            released, refunded, retained, phase, _ = self._compute_agreement_settlement_amounts(agreement, evaluation)
         matches = (
-            recomputed_released == int(settlement.released_to_provider)
-            and recomputed_refunded == int(settlement.refunded_to_buyer)
-            and recomputed_retained == int(settlement.retained)
-            and recomputed_terminal_phase == settlement.terminal_phase
+            released == int(settlement.released_to_provider)
+            and refunded == int(settlement.refunded_to_buyer)
+            and retained == int(settlement.retained)
+            and phase == settlement.terminal_phase
         )
         return {
             "agreement_id": agreement_id,
+            "mode": "AGREEMENT",
             "evaluation_id": agreement.latest_evaluation_id,
             "recorded_settlement_id": agreement.settlement_id,
-            "recomputed_released_to_provider": recomputed_released,
-            "recomputed_refunded_to_buyer": recomputed_refunded,
-            "recomputed_retained": recomputed_retained,
-            "recomputed_terminal_phase": recomputed_terminal_phase,
+            "recomputed_released_to_provider": released,
+            "recomputed_refunded_to_buyer": refunded,
+            "recomputed_retained": retained,
+            "recomputed_terminal_phase": phase,
+            "recovery_applied": recovery_applied,
             "matches_recorded_settlement": matches,
-            "note": (
-                "This recomputes the deterministic settlement math from the recorded "
-                "evaluation and funded amount; it does not and cannot re-run the original "
-                "live web fetch or LLM judgment that produced the evaluation itself."
-            ),
+            "note": "Recomputes recorded settlement math, including warranty holdback or inconclusive recovery; it does not replay prior web or LLM observations.",
         }
 
     @gl.public.view
